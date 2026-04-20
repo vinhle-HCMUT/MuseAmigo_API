@@ -50,8 +50,10 @@ A. Cấu hình Base URL
 C#
 // Luôn sử dụng HTTPS để đảm bảo bảo mật trên Cloud
 private string baseUrl = "https://museamigo-backend.onrender.com";
+
 B. Ví dụ gọi API lấy danh sách cổ vật
 C#
+
 IEnumerator GetArtifacts() {
     string url = baseUrl + "/artifacts";
     using (UnityWebRequest webRequest = UnityWebRequest.Get(url)) {
