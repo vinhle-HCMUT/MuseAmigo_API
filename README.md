@@ -59,7 +59,6 @@ IEnumerator GetArtifacts() {
     string url = baseUrl + "/artifacts";
     using (UnityWebRequest webRequest = UnityWebRequest.Get(url)) {
         yield return webRequest.SendWebRequest();
-
         if (webRequest.result == UnityWebRequest.Result.Success) {
             Debug.Log("Dữ liệu nhận về: " + webRequest.downloadHandler.text);
         } else {
