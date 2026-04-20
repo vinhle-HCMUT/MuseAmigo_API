@@ -50,9 +50,13 @@ Sau khi Push, Render sẽ mất khoảng 2-3 phút để build lại bản mới
 Sử dụng đoạn code mẫu dưới đây để kết nối Unity với hệ thống Backend.
 
 A. Cấu hình Base URL
+
 C#
+
 // Sử dụng HTTPS cho môi trường Production (Cloud)
+
 private string baseUrl = "[https://museamigo-backend.onrender.com](https://museamigo-backend.onrender.com)";
+
 B. Script mẫu lấy danh sách Cổ vật
 C#
 ```
@@ -85,6 +89,7 @@ public class ArtifactService : MonoBehaviour
 }
 ```
 5. Lưu Ý Quan Trọng
+6. 
 ⚠️ Cơ chế Cold Start: Vì dự án đang dùng gói Render Free, server sẽ tự "ngủ" nếu không có người truy cập. Lần gọi API đầu tiên trong ngày có thể mất 30-50 giây để khởi động. Vui lòng kiên nhẫn ở lần chạy app đầu tiên.
 
 🔄 Đồng bộ dữ liệu: Mọi dữ liệu chỉnh sửa qua DBeaver (Aiven) sẽ được cập nhật ngay lập tức cho toàn bộ người dùng App Unity mà không cần build lại App.
