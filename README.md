@@ -20,7 +20,7 @@ CẢNH BÁO BẢO MẬT: Tuyệt đối KHÔNG upload file chứa các thông ti
 
 2. Cách Test Backend (Dành cho Dev Frontend & Tester)
 Mọi thay đổi trên Backend sẽ được cập nhật trực tiếp tại URL:
-=>>https://museamigo-backend.onrender.com
+=>>https://museamigo-backend.onrender.com/docs/
 
 A. Kiểm tra bằng Swagger UI (Trực quan nhất)
 Truy cập: https://museamigo-backend.onrender.com/docs/
