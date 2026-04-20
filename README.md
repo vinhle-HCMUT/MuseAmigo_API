@@ -68,7 +68,9 @@ IEnumerator GetArtifacts() {
         }
     }
 }
+
 5. Lưu ý quan trọng cho cả nhóm
+
 Cơ chế "Ngủ" của Render: Vì chúng ta dùng gói Free, nếu server không có ai truy cập trong một thời gian, nó sẽ tạm nghỉ. Lần đầu mở app có thể mất 30 - 50 giây để server "tỉnh dậy". Các lần sau sẽ nhanh bình thường.
 
 Đồng bộ dữ liệu: Mọi dữ liệu cổ vật mới thêm vào qua DBeaver sẽ xuất hiện ngay lập tức trên App Unity của tất cả mọi người.
