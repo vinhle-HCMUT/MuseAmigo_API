@@ -40,6 +40,8 @@ Khi có sự thay đổi logic tại máy Local (VS Code), thực hiện quy tr�
    ```bash
    pip freeze > requirements.txt
 2. Commit và Push code lên GitHub:
+"""
    git add .
    git commit -m "feat: mô tả tính năng mới hoặc fix lỗi"
    git push origin main
+"""
