@@ -536,6 +536,7 @@ def update_user_settings(user_id: int, settings: schemas.UserSettingsUpdate, db:
     # 3. Update their preferences
     db_user.theme = settings.theme
     db_user.language = settings.language
+    db_user.font_size = settings.font_size
     
     # 4. Save the changes to MySQL
     db.commit()

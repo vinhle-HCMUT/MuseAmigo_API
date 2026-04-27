@@ -12,6 +12,8 @@ class User(Base):
 
     theme = Column(String(20), default="light") # e.g., "light" or "dark"
     language = Column(String(20), default="en") # e.g., "en", "vi", or "ja"
+    font_size = Column(Integer, default=14) # Font size in pixels
+
 class Museum(Base):
     __tablename__ = "museums"
 
