@@ -13,7 +13,7 @@ class UserResponse(BaseModel):
     email: str
     theme: str       
     language: str    
-    font_size: int
+    font_size: int = 16  # Default to 16 if NULL
     class Config:
         from_attributes = True # This tells Pydantic it's okay to read data from a SQLAlchemy model
 
