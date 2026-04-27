@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
+from langchain_core.messages import SystemMessage
 from database import SessionLocal
 import models
 from langgraph.prebuilt import create_react_agent # We use the official LangGraph agent builder
@@ -107,7 +108,12 @@ system_message = (
     "If you cannot find specific information in your database, politely say you don't know, "
     "but offer to help with other museum-related queries."
 )
-agent_executor = create_react_agent(base_llm, tools, messages_modifier=system_message)
+
+# Try the newer approach with state_modifier
+def modify_state(messages):
+    return [SystemMessage(content=system_message)] + messages
+
+agent_executor = create_react_agent(base_llm, tools, state_modifier=modify_state)
 
 # --- QUICK TEST ---
 if __name__ == "__main__":
