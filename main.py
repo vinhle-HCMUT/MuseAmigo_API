@@ -81,13 +81,285 @@ def seed_museums(db: Session) -> None:
     db.commit()
 
 
+def seed_artifacts(db: Session) -> None:
+    seed_data = [
+        # Independence Palace Artifacts
+        {
+            "artifact_code": "IP-001",
+            "title": "Presidential Desk",
+            "year": "1960s",
+            "description": "The original presidential desk used by President Nguyễn Văn Thiệu during the Vietnam War. This desk witnessed many important historical decisions that shaped the future of South Vietnam.",
+            "is_3d_available": True,
+            "unity_prefab_name": "Model_Presidential_Desk",
+            "museum_id": 1  # Independence Palace
+        },
+        {
+            "artifact_code": "IP-002", 
+            "title": "T-54 Tank",
+            "year": "1975",
+            "description": "The famous T-54 tank that crashed through the gates of Independence Palace on April 30, 1975, symbolizing the end of the Vietnam War. This tank became an iconic symbol of reunification.",
+            "is_3d_available": True,
+            "unity_prefab_name": "Model_T54_Tank",
+            "museum_id": 1
+        },
+        {
+            "artifact_code": "IP-003",
+            "title": "Presidential Throne",
+            "year": "1966",
+            "description": "Elegant throne used in the Presidential Reception Hall. Crafted from fine Vietnamese woods and gold leaf, it represents the formal ceremonies of the Republic of Vietnam.",
+            "is_3d_available": True,
+            "unity_prefab_name": "Model_Presidential_Throne",
+            "museum_id": 1
+        },
+        # War Remnants Museum Artifacts
+        {
+            "artifact_code": "WRM-001",
+            "title": "Guillotine",
+            "year": "Early 1900s",
+            "description": "A guillotine used during the French colonial period to execute Vietnamese revolutionaries. This somber artifact serves as a reminder of the struggles for independence.",
+            "is_3d_available": False,
+            "unity_prefab_name": "Model_Guillotine",
+            "museum_id": 2  # War Remnants Museum
+        },
+        {
+            "artifact_code": "WRM-002",
+            "title": "Tiger Cages",
+            "year": "1960s",
+            "description": "Reconstruction of the infamous tiger cages used to imprison political prisoners during the war. These small cells represent the harsh conditions faced by detainees.",
+            "is_3d_available": False,
+            "unity_prefab_name": "Model_Tiger_Cages",
+            "museum_id": 2
+        },
+        # Fine Arts Museum Artifacts
+        {
+            "artifact_code": "FAM-001",
+            "title": "Lacquer Painting 'Rural Life'",
+            "year": "1942",
+            "description": "A beautiful lacquer painting depicting traditional Vietnamese rural scenes. Created by renowned artist Tô Ngọc Vân, showcasing the sophisticated lacquer techniques of Vietnamese artisans.",
+            "is_3d_available": False,
+            "unity_prefab_name": "Model_Lacquer_Painting",
+            "museum_id": 3  # Fine Arts Museum
+        },
+        {
+            "artifact_code": "FAM-002",
+            "title": "Buddhist Statue",
+            "year": "17th Century",
+            "description": "Ancient bronze Buddhist statue from the Lê dynasty. This statue exemplifies the fine metalwork and religious artistry of traditional Vietnamese craftsmanship.",
+            "is_3d_available": True,
+            "unity_prefab_name": "Model_Buddhist_Statue",
+            "museum_id": 3
+        },
+        # HCMC Museum Artifacts
+        {
+            "artifact_code": "HCM-001",
+            "title": "Traditional Ao Dai",
+            "year": "1930s",
+            "description": "An authentic traditional Vietnamese Ao Dai from the early 20th century. This elegant garment represents the cultural heritage and fashion evolution of Vietnamese women.",
+            "is_3d_available": False,
+            "unity_prefab_name": "Model_Ao_Dai",
+            "museum_id": 4  # HCMC Museum
+        },
+        {
+            "artifact_code": "HCM-002",
+            "title": "Saigon Map 1930",
+            "year": "1930",
+            "description": "Historical map of Saigon from 1930, showing the city layout during French colonial period. This map provides insight into the urban development of early modern Saigon.",
+            "is_3d_available": False,
+            "unity_prefab_name": "Model_Saigon_Map",
+            "museum_id": 4
+        }
+    ]
+
+    for item in seed_data:
+        existing = db.query(models.Artifact).filter(models.Artifact.artifact_code == item["artifact_code"]).first()
+        if existing:
+            # Update existing artifact
+            existing.title = item["title"]
+            existing.year = item["year"]
+            existing.description = item["description"]
+            existing.is_3d_available = item["is_3d_available"]
+            existing.unity_prefab_name = item["unity_prefab_name"]
+            existing.museum_id = item["museum_id"]
+        else:
+            db.add(models.Artifact(**item))
+
+    db.commit()
+
+
+def seed_exhibitions(db: Session) -> None:
+    seed_data = [
+        # Independence Palace Exhibitions
+        {
+            "name": "Presidential Office Tour",
+            "location": "2nd Floor - Presidential Office",
+            "museum_id": 1
+        },
+        {
+            "name": "War History Gallery",
+            "location": "Ground Floor - East Wing",
+            "museum_id": 1
+        },
+        {
+            "name": "Diplomatic Reception Hall",
+            "location": "1st Floor - Central Hall",
+            "museum_id": 1
+        },
+        # War Remnants Museum Exhibitions
+        {
+            "name": "War Crimes Exhibition",
+            "location": "Building A - Upper Floor",
+            "museum_id": 2
+        },
+        {
+            "name": "International Support Gallery",
+            "location": "Building B - Main Hall",
+            "museum_id": 2
+        },
+        {
+            "name": "Peace and Reconciliation Display",
+            "location": "Outdoor Exhibition Area",
+            "museum_id": 2
+        },
+        # Fine Arts Museum Exhibitions
+        {
+            "name": "Contemporary Vietnamese Art",
+            "location": "Main Gallery - 1st Floor",
+            "museum_id": 3
+        },
+        {
+            "name": "Traditional Crafts Exhibition",
+            "location": "Heritage Wing - 2nd Floor",
+            "museum_id": 3
+        },
+        {
+            "name": "International Art Collection",
+            "location": "International Gallery - Ground Floor",
+            "museum_id": 3
+        },
+        # HCMC Museum Exhibitions
+        {
+            "name": "Saigon History Timeline",
+            "location": "Main Hall - Ground Floor",
+            "museum_id": 4
+        },
+        {
+            "name": "Traditional Culture Display",
+            "location": "Cultural Wing - 2nd Floor",
+            "museum_id": 4
+        },
+        {
+            "name": "Urban Development Exhibition",
+            "location": "Modern History Section - 1st Floor",
+            "museum_id": 4
+        }
+    ]
+
+    for item in seed_data:
+        existing = db.query(models.Exhibition).filter(
+            models.Exhibition.museum_id == item["museum_id"],
+            models.Exhibition.name == item["name"]
+        ).first()
+        if existing:
+            existing.location = item["location"]
+        else:
+            db.add(models.Exhibition(**item))
+
+    db.commit()
+
+
+def seed_routes(db: Session) -> None:
+    seed_data = [
+        # Independence Palace Routes
+        {
+            "name": "Presidential Tour",
+            "estimated_time": "45 min",
+            "stops_count": 6,
+            "museum_id": 1
+        },
+        {
+            "name": "Historical Highlights",
+            "estimated_time": "30 min",
+            "stops_count": 4,
+            "museum_id": 1
+        },
+        {
+            "name": "Architecture Tour",
+            "estimated_time": "60 min",
+            "stops_count": 8,
+            "museum_id": 1
+        },
+        # War Remnants Museum Routes
+        {
+            "name": "War History Path",
+            "estimated_time": "90 min",
+            "stops_count": 12,
+            "museum_id": 2
+        },
+        {
+            "name": "Quick Overview",
+            "estimated_time": "30 min",
+            "stops_count": 5,
+            "museum_id": 2
+        },
+        {
+            "name": "Photography Tour",
+            "estimated_time": "45 min",
+            "stops_count": 7,
+            "museum_id": 2
+        },
+        # Fine Arts Museum Routes
+        {
+            "name": "Masterpieces Collection",
+            "estimated_time": "60 min",
+            "stops_count": 8,
+            "museum_id": 3
+        },
+        {
+            "name": "Traditional Arts Walk",
+            "estimated_time": "40 min",
+            "stops_count": 6,
+            "museum_id": 3
+        },
+        # HCMC Museum Routes
+        {
+            "name": "City History Journey",
+            "estimated_time": "75 min",
+            "stops_count": 10,
+            "museum_id": 4
+        },
+        {
+            "name": "Cultural Heritage Trail",
+            "estimated_time": "50 min",
+            "stops_count": 7,
+            "museum_id": 4
+        }
+    ]
+
+    for item in seed_data:
+        existing = db.query(models.Route).filter(
+            models.Route.museum_id == item["museum_id"],
+            models.Route.name == item["name"]
+        ).first()
+        if existing:
+            existing.estimated_time = item["estimated_time"]
+            existing.stops_count = item["stops_count"]
+        else:
+            db.add(models.Route(**item))
+
+    db.commit()
+
+
 @app.on_event("startup")
 def startup_seed_data():
     db = next(get_db())
     try:
         seed_museums(db)
+        seed_artifacts(db)
+        seed_exhibitions(db)
+        seed_routes(db)
     finally:
         db.close()
+
 
 # --- Your old test routes ---
 @app.get("/")
