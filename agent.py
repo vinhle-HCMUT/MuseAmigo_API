@@ -107,7 +107,7 @@ system_message = (
     "If you cannot find specific information in your database, politely say you don't know, "
     "but offer to help with other museum-related queries."
 )
-agent_executor = create_react_agent(base_llm, tools, state_modifier=system_message)
+agent_executor = create_react_agent(base_llm, tools, messages_modifier=system_message)
 
 # --- QUICK TEST ---
 if __name__ == "__main__":
