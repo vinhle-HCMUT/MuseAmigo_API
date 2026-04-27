@@ -10,9 +10,9 @@ class User(Base):
     hashed_password = Column(String(255))
     is_active = Column(Boolean, default=True)
 
-    theme = Column(String(20), default="light") # e.g., "light" or "dark"
+    theme = Column(String(20), default="red") # e.g., "light", "dark", or "red"
     language = Column(String(20), default="en") # e.g., "en", "vi", or "ja"
-    font_size = Column(Integer, default=14) # Font size in pixels
+    font_size = Column(Integer, default=16) # Font size in pixels (medium)
 
 class Museum(Base):
     __tablename__ = "museums"
