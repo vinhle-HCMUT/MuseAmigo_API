@@ -101,19 +101,8 @@ tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes]
 
 # 5. Create the Agent Executor (The Manager!)
 # This wraps the LLM and the tools together so it can run the loop automatically.
-# We add a system message to give the AI more context.
-system_message = (
-    "You are Ogima, a friendly and helpful museum guide for the Independence Palace and other museums. "
-    "Use your tools to find information about artifacts, museum hours, ticket prices, exhibitions, and routes. "
-    "If you cannot find specific information in your database, politely say you don't know, "
-    "but offer to help with other museum-related queries."
-)
-
-# Try the newer approach with state_modifier
-def modify_state(messages):
-    return [SystemMessage(content=system_message)] + messages
-
-agent_executor = create_react_agent(base_llm, tools, state_modifier=modify_state)
+# Using the simplest approach without system message for now to debug deployment
+agent_executor = create_react_agent(base_llm, tools)
 
 # --- QUICK TEST ---
 if __name__ == "__main__":
