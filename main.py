@@ -31,6 +31,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def seed_museums(db: Session) -> None:
+    seed_data = [
+        {
+            "name": "Independence Palace",
+            "operating_hours": "8:00 AM - 5:00 PM",
+            "base_ticket_price": 30000,
+            "latitude": 10.7769,
+            "longitude": 106.6953,
+        },
+        {
+            "name": "War Remnants Museum",
+            "operating_hours": "7:30 AM - 6:00 PM",
+            "base_ticket_price": 30000,
+            "latitude": 10.7794,
+            "longitude": 106.6920,
+        },
+        {
+            "name": "HCMC Museum of Fine Arts",
+            "operating_hours": "9:00 AM - 5:00 PM",
+            "base_ticket_price": 30000,
+            "latitude": 10.7716,
+            "longitude": 106.6992,
+        },
+        {
+            "name": "Ho Chi Minh City Museum",
+            "operating_hours": "8:00 AM - 5:00 PM",
+            "base_ticket_price": 30000,
+            "latitude": 10.7767,
+            "longitude": 106.7009,
+        },
+    ]
+
+    for item in seed_data:
+        existing = (
+            db.query(models.Museum)
+            .filter(models.Museum.name == item["name"])
+            .first()
+        )
+        if existing:
+            existing.operating_hours = item["operating_hours"]
+            existing.base_ticket_price = item["base_ticket_price"]
+            existing.latitude = item["latitude"]
+            existing.longitude = item["longitude"]
+        else:
+            db.add(models.Museum(**item))
+
+    db.commit()
+
+
+@app.on_event("startup")
+def startup_seed_data():
+    db = next(get_db())
+    try:
+        seed_museums(db)
+    finally:
+        db.close()
+
 # --- Your old test routes ---
 @app.get("/")
 def read_root():
