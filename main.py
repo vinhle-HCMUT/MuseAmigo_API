@@ -1,15 +1,35 @@
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import models, schemas
 from database import engine, get_db
 import uuid
 from datetime import date
 from agent import agent_executor
+from sqlalchemy.exc import IntegrityError
 
 # Creates the tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:8000",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8080",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Your old test routes ---
 @app.get("/")
@@ -26,22 +46,23 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
     # 1. Package the data into our Database Model
     # (Note: For this test, we are saving the password as plain text. We will secure this later!)
-    db_user = models.User(
-        full_name=user.full_name, 
-        email=user.email, 
-        hashed_password=user.password 
-    )
-    
-    # 2. Add it to the database session
-    db.add(db_user)
-    
-    # 3. Commit (save) the changes to MySQL
-    db.commit()
-    
-    # 4. Refresh to grab the newly created ID from the database
-    db.refresh(db_user)
-    
-    # 5. Return the user (FastAPI will automatically filter it through UserResponse)
+    # 1. Tạo model (giữ nguyên)
+    db_user = models.User(full_name=user.full_name, email=user.email, hashed_password=user.password)
+
+    try:
+        # Đưa cả add và commit vào trong
+        db.add(db_user)
+        db.commit()
+        # Refresh ngay sau khi commit thành công để lấy ID
+        db.refresh(db_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email này đã có chủ rồi bạn ơi!")
+    except Exception as e:
+        db.rollback()
+        # Có thể in lỗi ra terminal để bạn dễ debug: print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail="Lỗi hệ thống rồi, đợi tý nhé!")
+
     return db_user
 @app.post("/auth/login")
 def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
