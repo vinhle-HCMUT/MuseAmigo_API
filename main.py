@@ -275,8 +275,17 @@ def update_user_settings(user_id: int, settings: schemas.UserSettingsUpdate, db:
 @app.post("/ai/chat", response_model=schemas.ChatResponse)
 def chat_with_ogima(chat_request: schemas.ChatRequest):
     
-    # 1. Package the user's message into the format LangGraph expects
-    user_input = {"messages": [("user", chat_request.message)]}
+    # 1. Package the user's message with Ogima's system message
+    system_message = (
+        "You are Ogima, a friendly and helpful museum guide for the Independence Palace and other museums. "
+        "Use your tools to find information about artifacts, museum hours, ticket prices, exhibitions, and routes. "
+        "If you cannot find specific information in your database, politely say you don't know, "
+        "but offer to help with other museum-related queries."
+    )
+    user_input = {"messages": [
+        ("system", system_message),
+        ("user", chat_request.message)
+    ]}
     
     try:
         # 2. Run the AI loop (Think -> Search DB -> Generate Answer)
