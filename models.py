@@ -80,3 +80,24 @@ class Route(Base):
     
     # Links this route to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100))           # e.g., "First Steps"
+    description = Column(String(500))    # e.g., "Scan your first artifact"
+    requirement_type = Column(String(50)) # e.g., "scan_count", "area_complete", "total_artifacts"
+    requirement_value = Column(Integer)   # e.g., 1 for first scan, 20 for discover 20 artifacts
+    points = Column(Integer, default=50)  # Points awarded for this achievement
+    museum_id = Column(Integer, ForeignKey("museums.id"), nullable=True) # NULL for global achievements
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    achievement_id = Column(Integer, ForeignKey("achievements.id"))
+    museum_id = Column(Integer, ForeignKey("museums.id"), nullable=True) # Track which museum this was earned in
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(String(50), nullable=True) # Date when completed

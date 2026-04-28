@@ -100,6 +100,29 @@ class RouteResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class AchievementResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    requirement_type: str
+    requirement_value: int
+    points: int
+    museum_id: int | None
+
+    class Config:
+        from_attributes = True
+
+class UserAchievementResponse(BaseModel):
+    id: int
+    user_id: int
+    achievement_id: int
+    museum_id: int | None
+    is_completed: bool
+    completed_at: str | None
+
+    class Config:
+        from_attributes = True
+
 class UserSettingsUpdate(BaseModel):
     theme: str
     language: str
