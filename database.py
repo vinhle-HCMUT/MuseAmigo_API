@@ -15,7 +15,13 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
 )
 
 # The Engine is the core interface to the database
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=10,  # Connection pool for better performance
+    max_overflow=20,  # Additional connections when pool is full
+    pool_pre_ping=True,  # Validate connections before use
+    pool_recycle=3600,  # Recycle connections every hour
+)
 
 # The SessionLocal class will be used to create actual database sessions for your API requests
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
