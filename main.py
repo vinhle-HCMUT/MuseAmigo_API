@@ -374,10 +374,18 @@ def get_museum_info():
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
+    # Validation: Check if username and password are provided
+    if not user.full_name or not user.full_name.strip():
+        raise HTTPException(status_code=400, detail="Username is required")
+    if not user.password or not user.password.strip():
+        raise HTTPException(status_code=400, detail="Password is required")
+    if len(user.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
     # 1. Package the data into our Database Model
     # (Note: For this test, we are saving the password as plain text. We will secure this later!)
     # 1. Tạo model (giữ nguyên)
-    db_user = models.User(full_name=user.full_name, email=user.email, hashed_password=user.password)
+    db_user = models.User(full_name=user.full_name.strip(), email=user.email.strip(), hashed_password=user.password)
 
     try:
         # Đưa cả add và commit vào trong
@@ -397,8 +405,14 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.post("/auth/login")
 def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
     
+    # Validation: Check if email and password are provided
+    if not user_credentials.email or not user_credentials.email.strip():
+        raise HTTPException(status_code=400, detail="Email is required")
+    if not user_credentials.password or not user_credentials.password.strip():
+        raise HTTPException(status_code=400, detail="Password is required")
+    
     # 1. Search the database for a user with this email
-    db_user = db.query(models.User).filter(models.User.email == user_credentials.email).first()
+    db_user = db.query(models.User).filter(models.User.email == user_credentials.email.strip()).first()
     
     # 2. Check if the user exists AND if the plain text password matches
     # (Note: We are still using the column name 'hashed_password' from earlier, but it holds plain text right now)
@@ -407,8 +421,15 @@ def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db
             status_code=status.HTTP_404_NOT_FOUND,  
             detail="Invalid credentials"
         )
+    
+    # 3. Check if user has required fields (cleanup for existing users with no username/password)
+    if not db_user.full_name or not db_user.full_name.strip():
+        raise HTTPException(
+            status_code=400,  
+            detail="Your account is incomplete. Please contact support."
+        )
         
-    # 3. If everything matches, login is successful!
+    # 4. If everything matches, login is successful!
     return {
         "message": "Login successful!", 
         "user_id": db_user.id, 
