@@ -1,0 +1,12 @@
+C:\Users\dell\Downloads\MuseAmigo_Backend\agent.py:110: LangGraphDeprecatedSinceV10: create_react_agent has been moved to `langchain.agents`. Please update your import to `from langchain.agents import create_agent`. Deprecated in LangGraph V1.0 to be removed in V2.0.
+  agent_executor = create_react_agent(base_llm, tools, state_modifier=system_message)
+Traceback (most recent call last):
+  File "C:\Users\dell\Downloads\MuseAmigo_Backend\agent.py", line 110, in <module>
+    agent_executor = create_react_agent(base_llm, tools, state_modifier=system_message)
+  File "C:\Python314\Lib\_py_warnings.py", line 800, in wrapper
+    return arg(*args, **kwargs)
+  File "C:\Users\dell\AppData\Roaming\Python\Python314\site-packages\langgraph\prebuilt\chat_agent_executor.py", line 529, in create_react_agent
+    raise TypeError(
+        f"create_react_agent() got unexpected keyword arguments: {deprecated_kwargs}"
+    )
+TypeError: create_react_agent() got unexpected keyword arguments: {'state_modifier': "You are Ogima, a friendly and helpful museum guide for the Independence Palace and other museums. Use your tools to find information about artifacts, museum hours, ticket prices, exhibitions, and routes. If you cannot find specific information in your database, politely say you don't know, but offer to help with other museum-related queries."}

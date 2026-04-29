@@ -43,6 +43,7 @@ class ArtifactResponse(BaseModel):
     museum_id: int
     
     unity_prefab_name: str
+    audio_asset: str = ""
     class Config:
         from_attributes = True
 

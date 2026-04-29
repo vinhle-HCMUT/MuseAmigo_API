@@ -81,6 +81,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "The original presidential desk used by President Nguyễn Văn Thiệu during the Vietnam War. This desk witnessed many important historical decisions that shaped the future of South Vietnam.",
             "is_3d_available": True,
             "unity_prefab_name": "Model_Presidential_Desk",
+            "audio_asset": "assets/audio/artifact_001.wav",
             "museum_id": 1  # Independence Palace
         },
         {
@@ -90,6 +91,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "The famous T-54 tank that crashed through the gates of Independence Palace on April 30, 1975, symbolizing the end of the Vietnam War. This tank became an iconic symbol of reunification.",
             "is_3d_available": True,
             "unity_prefab_name": "Model_T54_Tank",
+            "audio_asset": "assets/audio/artifact_002.wav",
             "museum_id": 1
         },
         {
@@ -99,6 +101,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "Elegant throne used in the Presidential Reception Hall. Crafted from fine Vietnamese woods and gold leaf, it represents the formal ceremonies of the Republic of Vietnam.",
             "is_3d_available": True,
             "unity_prefab_name": "Model_Presidential_Throne",
+            "audio_asset": "assets/audio/artifact_001.wav",
             "museum_id": 1
         },
         # War Remnants Museum Artifacts
@@ -109,6 +112,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "A guillotine used during the French colonial period to execute Vietnamese revolutionaries. This somber artifact serves as a reminder of the struggles for independence.",
             "is_3d_available": False,
             "unity_prefab_name": "Model_Guillotine",
+            "audio_asset": "assets/audio/artifact_002.wav",
             "museum_id": 2  # War Remnants Museum
         },
         {
@@ -118,6 +122,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "Reconstruction of the infamous tiger cages used to imprison political prisoners during the war. These small cells represent the harsh conditions faced by detainees.",
             "is_3d_available": False,
             "unity_prefab_name": "Model_Tiger_Cages",
+            "audio_asset": "assets/audio/artifact_001.wav",
             "museum_id": 2
         },
         # Fine Arts Museum Artifacts
@@ -128,6 +133,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "A beautiful lacquer painting depicting traditional Vietnamese rural scenes. Created by renowned artist Tô Ngọc Vân, showcasing the sophisticated lacquer techniques of Vietnamese artisans.",
             "is_3d_available": False,
             "unity_prefab_name": "Model_Lacquer_Painting",
+            "audio_asset": "assets/audio/artifact_002.wav",
             "museum_id": 3  # Fine Arts Museum
         },
         {
@@ -137,6 +143,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "Ancient bronze Buddhist statue from the Lê dynasty. This statue exemplifies the fine metalwork and religious artistry of traditional Vietnamese craftsmanship.",
             "is_3d_available": True,
             "unity_prefab_name": "Model_Buddhist_Statue",
+            "audio_asset": "assets/audio/artifact_001.wav",
             "museum_id": 3
         },
         # HCMC Museum Artifacts
@@ -147,6 +154,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "An authentic traditional Vietnamese Ao Dai from the early 20th century. This elegant garment represents the cultural heritage and fashion evolution of Vietnamese women.",
             "is_3d_available": False,
             "unity_prefab_name": "Model_Ao_Dai",
+            "audio_asset": "assets/audio/artifact_002.wav",
             "museum_id": 4  # HCMC Museum
         },
         {
@@ -156,6 +164,7 @@ def seed_artifacts(db: Session) -> None:
             "description": "Historical map of Saigon from 1930, showing the city layout during French colonial period. This map provides insight into the urban development of early modern Saigon.",
             "is_3d_available": False,
             "unity_prefab_name": "Model_Saigon_Map",
+            "audio_asset": "assets/audio/artifact_001.wav",
             "museum_id": 4
         }
     ]
@@ -169,6 +178,7 @@ def seed_artifacts(db: Session) -> None:
             existing.description = item["description"]
             existing.is_3d_available = item["is_3d_available"]
             existing.unity_prefab_name = item["unity_prefab_name"]
+            existing.audio_asset = item["audio_asset"]
             existing.museum_id = item["museum_id"]
         else:
             db.add(models.Artifact(**item))
@@ -574,13 +584,24 @@ def get_all_museums(db: Session = Depends(get_db)):
 # 2. Endpoint to load the 3D Artifact screen after scanning a QR code
 @app.get("/artifacts/{artifact_code}", response_model=schemas.ArtifactResponse)
 def get_artifact(artifact_code: str, db: Session = Depends(get_db)):
-    # Search for the exact code (e.g., "T54-843")
-    artifact = db.query(models.Artifact).filter(models.Artifact.artifact_code == artifact_code).first()
+    # Trim whitespace and make case-insensitive search
+    clean_code = artifact_code.strip().upper()
+    
+    # First try exact match (case-insensitive via UPPER)
+    artifact = db.query(models.Artifact).filter(
+        db.func.upper(models.Artifact.artifact_code) == clean_code
+    ).first()
+    
+    # If not found, try partial match in case there are spaces
+    if not artifact:
+        artifact = db.query(models.Artifact).filter(
+            db.func.upper(db.func.replace(models.Artifact.artifact_code, ' ', '')) == clean_code.replace(' ', '')
+        ).first()
     
     if not artifact:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Artifact not found"
+            detail=f"Artifact code '{artifact_code}' not found. Available codes: IP-001, IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002"
         )
         
     return artifact

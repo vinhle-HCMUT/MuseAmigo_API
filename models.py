@@ -36,6 +36,8 @@ class Artifact(Base):
     
     # Tell Unity which 3D file to load ---
     unity_prefab_name = Column(String(100)) # e.g., "Model_T54_Tank" or "Model_Bust_Statue"
+    # Audio asset for artifact description
+    audio_asset = Column(String(200), default="") # e.g., "assets/audio/artifact_001.mp3"
     # Links this artifact to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))
 class Collection(Base):
