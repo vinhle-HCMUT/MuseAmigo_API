@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 import models, schemas
 from database import engine, get_db
 import uuid
@@ -614,13 +614,13 @@ def get_artifact(artifact_code: str, db: Session = Depends(get_db)):
     
     # First try exact match (case-insensitive via UPPER)
     artifact = db.query(models.Artifact).filter(
-        db.func.upper(models.Artifact.artifact_code) == clean_code
+        func.upper(models.Artifact.artifact_code) == clean_code
     ).first()
-    
+
     # If not found, try partial match in case there are spaces
     if not artifact:
         artifact = db.query(models.Artifact).filter(
-            db.func.upper(db.func.replace(models.Artifact.artifact_code, ' ', '')) == clean_code.replace(' ', '')
+            func.upper(func.replace(models.Artifact.artifact_code, ' ', '')) == clean_code.replace(' ', '')
         ).first()
     
     if not artifact:
