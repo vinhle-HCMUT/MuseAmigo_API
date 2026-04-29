@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
@@ -350,140 +350,60 @@ def seed_routes(db: Session) -> None:
     db.commit()
 
 def seed_achievements(db: Session) -> None:
-    seed_data = [
-        # Global achievements (museum_id = NULL)
-        {
-            "name": "First Steps",
-            "description": "Scan your first artifact",
-            "requirement_type": "scan_count",
-            "requirement_value": 1,
-            "points": 50,
-            "museum_id": None
-        },
-        {
-            "name": "Artifact Collector",
-            "description": "Scan 5 artifacts",
-            "requirement_type": "scan_count",
-            "requirement_value": 5,
-            "points": 100,
-            "museum_id": None
-        },
-        {
-            "name": "Museum Explorer",
-            "description": "Scan 10 artifacts",
-            "requirement_type": "scan_count",
-            "requirement_value": 10,
-            "points": 200,
-            "museum_id": None
-        },
-        {
-            "name": "History Hunter",
-            "description": "Discover 20 artifacts",
-            "requirement_type": "scan_count",
-            "requirement_value": 20,
-            "points": 300,
-            "museum_id": None
-        },
-        {
-            "name": "Artifact Master",
-            "description": "Discover 50 artifacts",
-            "requirement_type": "scan_count",
-            "requirement_value": 50,
-            "points": 500,
-            "museum_id": None
-        },
-        {
-            "name": "Dynasty Master",
-            "description": "Scan all artifacts in any single area/museum",
-            "requirement_type": "area_complete",
-            "requirement_value": 1,
-            "points": 400,
-            "museum_id": None
-        },
-        # Independence Palace achievements
-        {
-            "name": "Presidential History",
-            "description": "Visit Independence Palace",
-            "requirement_type": "museum_visit",
-            "requirement_value": 1,
-            "points": 100,
-            "museum_id": 1
-        },
-        {
-            "name": "Palace Explorer",
-            "description": "Scan 3 artifacts at Independence Palace",
-            "requirement_type": "museum_scan_count",
-            "requirement_value": 3,
-            "points": 150,
-            "museum_id": 1
-        },
-        # War Remnants Museum achievements
-        {
-            "name": "War Historian",
-            "description": "Visit War Remnants Museum",
-            "requirement_type": "museum_visit",
-            "requirement_value": 1,
-            "points": 100,
-            "museum_id": 2
-        },
-        {
-            "name": "Peace Seeker",
-            "description": "Scan 3 artifacts at War Remnants Museum",
-            "requirement_type": "museum_scan_count",
-            "requirement_value": 3,
-            "points": 150,
-            "museum_id": 2
-        },
-        # Fine Arts Museum achievements
-        {
-            "name": "Art Enthusiast",
-            "description": "Visit Fine Arts Museum",
-            "requirement_type": "museum_visit",
-            "requirement_value": 1,
-            "points": 100,
-            "museum_id": 3
-        },
-        {
-            "name": "Culture Lover",
-            "description": "Scan 3 artifacts at Fine Arts Museum",
-            "requirement_type": "museum_scan_count",
-            "requirement_value": 3,
-            "points": 150,
-            "museum_id": 3
-        },
-        # HCMC Museum achievements
-        {
-            "name": "City Historian",
-            "description": "Visit HCMC Museum",
-            "requirement_type": "museum_visit",
-            "requirement_value": 1,
-            "points": 100,
-            "museum_id": 4
-        },
-        {
-            "name": "Heritage Guardian",
-            "description": "Scan 3 artifacts at HCMC Museum",
-            "requirement_type": "museum_scan_count",
-            "requirement_value": 3,
-            "points": 150,
-            "museum_id": 4
-        },
-        {
-            "name": "Museum Champion",
-            "description": "Visit all 4 museums",
-            "requirement_type": "all_museums",
-            "requirement_value": 4,
-            "points": 600,
-            "museum_id": None
-        }
+    # 15 scan-count achievement templates shared across all museums
+    achievement_templates = [
+        ("First Steps", "Scan 1 artifact", 1, 50),
+        ("Curious Visitor", "Scan 2 artifacts", 2, 100),
+        ("Growing Collection", "Scan 3 artifacts", 3, 150),
+        ("Dedicated Explorer", "Scan 5 artifacts", 5, 200),
+        ("Museum Regular", "Scan 7 artifacts", 7, 250),
+        ("History Buff", "Scan 10 artifacts", 10, 300),
+        ("Avid Collector", "Scan 15 artifacts", 15, 350),
+        ("Master Collector", "Scan 20 artifacts", 20, 400),
+        ("Legendary Explorer", "Scan 30 artifacts", 30, 500),
+        ("Ultimate Curator", "Scan 50 artifacts", 50, 600),
+        ("Century Scans", "Scan 75 artifacts", 75, 700),
+        ("Millennium Marks", "Scan 100 artifacts", 100, 800),
+        ("Unstoppable", "Scan 150 artifacts", 150, 900),
+        ("Museum Legend", "Scan 200 artifacts", 200, 1000),
+        ("Infinite Explorer", "Scan 500 artifacts", 500, 1500),
     ]
 
-    for item in seed_data:
-        existing = db.query(models.Achievement).filter(
-            models.Achievement.name == item["name"]
-        ).first()
-        if not existing:
-            db.add(models.Achievement(**item))
+    museums = db.query(models.Museum).all()
+
+    for museum in museums:
+        for name, description, requirement_value, points in achievement_templates:
+            existing = db.query(models.Achievement).filter(
+                models.Achievement.name == name,
+                models.Achievement.museum_id == museum.id
+            ).first()
+            item = {
+                "name": name,
+                "description": description,
+                "requirement_type": "museum_scan_count",
+                "requirement_value": requirement_value,
+                "points": points,
+                "museum_id": museum.id
+            }
+            if existing:
+                existing.description = description
+                existing.requirement_type = "museum_scan_count"
+                existing.requirement_value = requirement_value
+                existing.points = points
+            else:
+                db.add(models.Achievement(**item))
+
+    # Remove old global/per-museum achievements that are no longer in the template
+    valid_names = {t[0] for t in achievement_templates}
+    old_achievements = db.query(models.Achievement).filter(
+        ~models.Achievement.name.in_(valid_names)
+    ).all()
+    for old in old_achievements:
+        # Delete referencing user achievements first to avoid FK constraint errors
+        db.query(models.UserAchievement).filter(
+            models.UserAchievement.achievement_id == old.id
+        ).delete(synchronize_session=False)
+        db.delete(old)
 
     db.commit()
 
@@ -702,11 +622,10 @@ def get_routes(museum_id: int, db: Session = Depends(get_db)):
 # --- PHASE 3.5: Get Achievements for a Route ---
 @app.get("/museums/{museum_id}/routes/{route_id}/achievements")
 def get_route_achievements(museum_id: int, route_id: int, db: Session = Depends(get_db)):
-    # Get achievements that are specific to this museum or global
     achievements = db.query(models.Achievement).filter(
-        (models.Achievement.museum_id == museum_id) | (models.Achievement.museum_id == None)
+        models.Achievement.museum_id == museum_id
     ).all()
-    
+
     return {
         "route_id": route_id,
         "museum_id": museum_id,
@@ -736,83 +655,60 @@ def reset_museum_achievements(user_id: int, museum_id: int, db: Session = Depend
 
 # --- PHASE 4: Calculate User Achievements ---
 @app.get("/users/{user_id}/achievements")
-def get_user_achievements(user_id: int, db: Session = Depends(get_db)):
-    
-    # Get all available achievements
-    all_achievements = db.query(models.Achievement).all()
-    
-    # Get user's completed achievements
-    user_achievements = db.query(models.UserAchievement).filter(
-        models.UserAchievement.user_id == user_id
+def get_user_achievements(user_id: int, museum_id: int = Query(..., description="Museum ID to get achievements for"), db: Session = Depends(get_db)):
+
+    # Get achievements for the specified museum only
+    all_achievements = db.query(models.Achievement).filter(
+        models.Achievement.museum_id == museum_id
     ).all()
-    
-    # Create a dictionary of completed achievements by achievement_id
+
+    # Get user's completed achievements for this museum
+    user_achievements = db.query(models.UserAchievement).filter(
+        models.UserAchievement.user_id == user_id,
+        models.UserAchievement.museum_id == museum_id
+    ).all()
+
     completed_achievements = {
         ua.achievement_id: ua for ua in user_achievements
     }
-    
-    # Calculate total scan count per museum
+
+    # Calculate scan count for THIS museum only
     user_collections = db.query(models.Collection).filter(
         models.Collection.user_id == user_id
     ).all()
-    
+
     artifact_ids = [c.artifact_id for c in user_collections]
-    artifacts = db.query(models.Artifact).filter(models.Artifact.id.in_(artifact_ids)).all()
-    
-    museum_scan_counts = {}
-    for artifact in artifacts:
-        museum_scan_counts[artifact.museum_id] = museum_scan_counts.get(artifact.museum_id, 0) + 1
-    
-    total_scan_count = len(artifact_ids)
-    unique_museums_visited = len(set(artifact.museum_id for artifact in artifacts))
-    
-    # Calculate total points from completed achievements
+    artifacts = db.query(models.Artifact).filter(
+        models.Artifact.id.in_(artifact_ids),
+        models.Artifact.museum_id == museum_id
+    ).all()
+
+    museum_scan_count = len(artifacts)
+
+    # Calculate total points from completed achievements for this museum
     total_points = sum(
         db.query(models.Achievement).filter(
             models.Achievement.id == ua.achievement_id
-        ).first().points 
+        ).first().points
         for ua in user_achievements if ua.is_completed
     )
-    
+
     # Check and update achievement progress
     achievements_response = []
     for achievement in all_achievements:
         is_completed = False
         progress = 0
-        
+
         if achievement.id in completed_achievements:
             is_completed = completed_achievements[achievement.id].is_completed
         else:
-            # Check if achievement should be completed
-            if achievement.requirement_type == "scan_count":
-                progress = min(total_scan_count, achievement.requirement_value)
-                if total_scan_count >= achievement.requirement_value:
+            if achievement.requirement_type == "museum_scan_count":
+                progress = min(museum_scan_count, achievement.requirement_value)
+                if museum_scan_count >= achievement.requirement_value:
                     is_completed = True
-            elif achievement.requirement_type == "museum_scan_count" and achievement.museum_id:
-                progress = min(museum_scan_counts.get(achievement.museum_id, 0), achievement.requirement_value)
-                if museum_scan_counts.get(achievement.museum_id, 0) >= achievement.requirement_value:
-                    is_completed = True
-            elif achievement.requirement_type == "museum_visit" and achievement.museum_id:
-                if achievement.museum_id in museum_scan_counts:
-                    is_completed = True
-                    progress = 1
-            elif achievement.requirement_type == "all_museums":
-                progress = unique_museums_visited
-                if unique_museums_visited >= achievement.requirement_value:
-                    is_completed = True
-            elif achievement.requirement_type == "area_complete":
-                # Dynasty Master: Check if user has scanned all artifacts in any single museum
-                for museum_id, count in museum_scan_counts.items():
-                    total_artifacts_in_museum = db.query(models.Artifact).filter(
-                        models.Artifact.museum_id == museum_id
-                    ).count()
-                    if count >= total_artifacts_in_museum:
-                        is_completed = True
-                        progress = 1
-                        break
-            
+
             # Auto-complete achievement if criteria met
-            if is_completed and achievement.id not in completed_achievements:
+            if is_completed:
                 new_user_achievement = models.UserAchievement(
                     user_id=user_id,
                     achievement_id=achievement.id,
@@ -823,7 +719,7 @@ def get_user_achievements(user_id: int, db: Session = Depends(get_db)):
                 db.add(new_user_achievement)
                 db.commit()
                 total_points += achievement.points
-        
+
         achievements_response.append({
             "id": achievement.id,
             "name": achievement.name,
@@ -835,11 +731,12 @@ def get_user_achievements(user_id: int, db: Session = Depends(get_db)):
             "is_completed": is_completed,
             "progress": progress
         })
-    
+
     return {
         "user_id": user_id,
+        "museum_id": museum_id,
         "total_points": total_points,
-        "unlocked_count": total_scan_count,
+        "unlocked_count": museum_scan_count,
         "achievements": achievements_response
     }
 
