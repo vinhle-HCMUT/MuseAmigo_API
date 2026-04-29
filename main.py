@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import models, schemas
 from database import engine, get_db
 import uuid
@@ -487,8 +488,32 @@ def seed_achievements(db: Session) -> None:
     db.commit()
 
 
+def migrate_add_audio_asset_column():
+    """Add audio_asset column to artifacts table if it doesn't exist (for existing databases)"""
+    db = next(get_db())
+    try:
+        # Try to add the column - will fail silently if it already exists
+        db.execute(text("""
+            ALTER TABLE artifacts ADD COLUMN audio_asset VARCHAR(200) DEFAULT '' 
+        """))
+        db.commit()
+        print("✓ Added audio_asset column to artifacts table")
+    except Exception as e:
+        # Column likely already exists - this is fine
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ audio_asset column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup_seed_data():
+    # Run migration first to ensure schema is up-to-date
+    migrate_add_audio_asset_column()
+    
     db = next(get_db())
     try:
         seed_museums(db)
