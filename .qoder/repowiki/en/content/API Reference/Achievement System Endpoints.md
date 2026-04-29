@@ -9,6 +9,14 @@
 - [README.md](file://README.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Updated achievement system architecture to reflect simplified museum-specific approach
+- Removed documentation of global achievements and complex requirement types
+- Updated achievement calculation logic to focus solely on museum_scan_count requirements
+- Revised reset functionality to work exclusively with museum-specific achievements
+- Updated data models and relationships to reflect current implementation
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -21,11 +29,13 @@
 9. [Conclusion](#conclusion)
 
 ## Introduction
-This document provides comprehensive API documentation for the achievement system endpoints in the MuseAmigo backend. It covers two primary endpoints:
-- GET /users/{user_id}/achievements: Calculates and retrieves user achievements with progress tracking, completion status, and point calculations.
-- POST /users/{user_id}/achievements/reset/{museum_id}: Resets user achievements specific to a museum.
+This document provides comprehensive API documentation for the achievement system endpoints in the MuseAmigo backend. The system has been refactored to focus exclusively on museum-specific achievements with a simplified approach centered around scan count requirements.
 
-The documentation explains achievement requirement types, progress calculation algorithms, point system implementation, and integration with the UserAchievement model. It also provides examples of achievement calculation and reset workflows.
+The achievement system now provides two primary endpoints:
+- GET /users/{user_id}/achievements: Calculates and retrieves user achievements for a specific museum with progress tracking and completion status
+- POST /users/{user_id}/achievements/reset/{museum_id}: Resets user achievements specific to a museum
+
+**Updated** The system now operates under a simplified architecture focusing on museum_scan_count requirements with explicit museum_id context, removing support for global achievements and complex requirement types.
 
 ## Project Structure
 The achievement system is implemented within a FastAPI application with SQLAlchemy ORM models. The key components are organized as follows:
@@ -72,27 +82,26 @@ The achievement system consists of several core components that work together to
 
 ### Achievement Models
 The system uses two primary models:
-- Achievement: Defines achievement criteria, points, and scope (global or museum-specific)
-- UserAchievement: Tracks individual user progress and completion status
+- Achievement: Defines achievement criteria with museum_id context and points
+- UserAchievement: Tracks individual user progress and completion status for specific museums
+
+**Updated** The system now operates under a simplified model structure focused on museum-specific achievements, with the Achievement model containing museum_id as a required foreign key rather than supporting global achievements.
 
 ### Achievement Requirement Types
-The system supports multiple achievement types:
-- scan_count: Requires scanning a specific number of artifacts globally
+**Updated** The system now supports only one achievement type:
 - museum_scan_count: Requires scanning artifacts within a specific museum
-- museum_visit: Requires visiting a specific museum (presence of any artifact scan)
-- all_museums: Requires visiting a specific number of museums
-- area_complete: Requires scanning all artifacts in a specific museum
-- first_steps: Special case for initial artifact scan
+
+**Removed** Previous requirement types (scan_count, museum_visit, all_museums, area_complete, first_steps) have been removed as part of the simplification effort.
 
 ### Point System
-Each achievement has an associated point value that contributes to the user's total points. Points are calculated cumulatively based on completed achievements.
+Each achievement has an associated point value that contributes to the user's total points. Points are calculated cumulatively based on completed achievements within the specified museum context.
 
 **Section sources**
 - [models.py:86-105](file://models.py#L86-L105)
-- [main.py:352-488](file://main.py#L352-L488)
+- [main.py:657-741](file://main.py#L657-L741)
 
 ## Architecture Overview
-The achievement system follows a RESTful architecture with clear separation of concerns:
+The achievement system follows a RESTful architecture with clear separation of concerns and focuses on museum-specific achievement tracking:
 
 ```mermaid
 sequenceDiagram
@@ -100,24 +109,24 @@ participant Client as "Client Application"
 participant API as "FastAPI Server"
 participant DB as "Database"
 participant Models as "ORM Models"
-Client->>API : GET /users/{user_id}/achievements
-API->>Models : Query all achievements
-API->>Models : Query user collections
-API->>Models : Calculate progress metrics
-API->>Models : Check completion criteria
-API->>DB : Insert new UserAchievement records
+Client->>API : GET /users/{user_id}/achievements?museum_id={id}
+API->>Models : Query achievements for specific museum
+API->>Models : Query user collections for museum
+API->>Models : Calculate museum scan count
+API->>Models : Check completion criteria (museum_scan_count)
+API->>DB : Insert new UserAchievement records if completed
 DB-->>API : Transaction committed
 API-->>Client : Achievement data with progress
 Client->>API : POST /users/{user_id}/achievements/reset/{museum_id}
-API->>Models : Query UserAchievement records
+API->>Models : Query UserAchievement records for museum
 API->>DB : Delete museum-specific achievements
 DB-->>API : Deletion confirmed
 API-->>Client : Reset confirmation
 ```
 
 **Diagram sources**
-- [main.py:738-844](file://main.py#L738-L844)
-- [main.py:725-735](file://main.py#L725-L735)
+- [main.py:657-741](file://main.py#L657-L741)
+- [main.py:644-654](file://main.py#L644-L654)
 
 ## Detailed Component Analysis
 
@@ -126,13 +135,16 @@ API-->>Client : Reset confirmation
 #### Endpoint Definition
 - **Method**: GET
 - **Path**: /users/{user_id}/achievements
-- **Description**: Calculates and retrieves user achievements with progress tracking and completion status
+- **Description**: Calculates and retrieves user achievements for a specific museum with progress tracking and completion status
+
+**Updated** The endpoint now requires a museum_id query parameter to specify which museum's achievements to calculate and retrieve.
 
 #### Request Parameters
 - user_id (path parameter): Integer identifier of the user whose achievements to retrieve
+- museum_id (query parameter): Integer identifier of the museum whose achievements to calculate
 
 #### Response Structure
-The endpoint returns a comprehensive achievement summary:
+The endpoint returns a comprehensive achievement summary for the specified museum:
 
 ```mermaid
 classDiagram
@@ -149,6 +161,7 @@ class AchievementResponse {
 }
 class UserAchievementSummary {
 +int user_id
++int museum_id
 +int total_points
 +int unlocked_count
 +AchievementResponse[] achievements
@@ -160,69 +173,47 @@ AchievementResponse --> UserAchievementSummary : "included in"
 - [schemas.py:104-125](file://schemas.py#L104-L125)
 
 #### Progress Calculation Algorithm
-The system calculates progress using the following algorithm:
+**Updated** The system now calculates progress using a simplified algorithm focused on museum_scan_count requirements:
 
 ```mermaid
 flowchart TD
-Start([Start Calculation]) --> LoadAchievements["Load All Achievements"]
-LoadAchievements --> LoadCollections["Load User Collections"]
-LoadCollections --> CountScans["Count Total Scans"]
-CountScans --> CountMuseums["Count Unique Museums Visited"]
-CountMuseums --> InitProgress["Initialize Progress Tracking"]
-InitProgress --> CheckRequirements{"Check Requirement Type"}
-CheckRequirements --> |scan_count| ScanCount["Progress = min(total_scans, requirement_value)"]
-CheckRequirements --> |museum_scan_count| MuseumScan["Progress = min(museum_scans, requirement_value)"]
-CheckRequirements --> |museum_visit| MuseumVisit["Progress = 1 if visited, else 0"]
-CheckRequirements --> |all_museums| AllMuseums["Progress = min(unique_museums, requirement_value)"]
-CheckRequirements --> |area_complete| AreaComplete["Progress = 1 if all artifacts scanned in museum"]
-ScanCount --> CheckCompletion{"Check Completion"}
-MuseumScan --> CheckCompletion
-MuseumVisit --> CheckCompletion
-AllMuseums --> CheckCompletion
-AreaComplete --> CheckCompletion
+Start([Start Calculation]) --> LoadAchievements["Load Achievements for Specific Museum"]
+LoadAchievements --> LoadCollections["Load User Collections for Museum"]
+LoadCollections --> CountMuseumScans["Count Artifacts Scanned in Museum"]
+CountMuseumScans --> InitProgress["Initialize Progress Tracking"]
+InitProgress --> CheckRequirement{"Check Requirement Type"}
+CheckRequirement --> |museum_scan_count| MuseumScan["Progress = min(museum_scans, requirement_value)"]
+CheckRequirement --> |Other Types| Skip["Skip (Not Implemented)"]
+MuseumScan --> CheckCompletion{"Check Completion"}
+Skip --> ContinueLoop["Continue Processing"]
 CheckCompletion --> |Completed| MarkComplete["Mark as Completed"]
 CheckCompletion --> |Not Completed| KeepPending["Keep Pending"]
 MarkComplete --> UpdatePoints["Add Achievement Points"]
-KeepPending --> ContinueLoop["Continue Processing"]
+KeepPending --> ContinueLoop
 UpdatePoints --> ContinueLoop
 ContinueLoop --> NextAchievement{"More Achievements?"}
-NextAchievement --> |Yes| CheckRequirements
+NextAchievement --> |Yes| CheckRequirement
 NextAchievement --> |No| ReturnResults["Return Achievement Summary"]
 ```
 
 **Diagram sources**
-- [main.py:777-837](file://main.py#L777-L837)
+- [main.py:696-741](file://main.py#L696-L741)
 
 #### Achievement Requirement Types and Logic
 
-##### scan_count
-- **Description**: Requires scanning a specific number of artifacts globally
-- **Calculation**: progress = min(total_scans, requirement_value)
-- **Completion**: total_scans >= requirement_value
+**Updated** The system now supports only one requirement type:
 
 ##### museum_scan_count
-- **Description**: Requires scanning artifacts within a specific museum
+- **Description**: Requires scanning a specific number of artifacts within a specific museum
 - **Calculation**: progress = min(museum_scans, requirement_value)
 - **Completion**: museum_scans >= requirement_value
+- **Scope**: Limited to artifacts from the specified museum only
 
-##### museum_visit
-- **Description**: Requires visiting a specific museum (presence of any artifact scan)
-- **Calculation**: progress = 1 if museum visited, else 0
-- **Completion**: True if any artifact from the museum is scanned
-
-##### all_museums
-- **Description**: Requires visiting a specific number of museums
-- **Calculation**: progress = min(unique_museums, requirement_value)
-- **Completion**: unique_museums >= requirement_value
-
-##### area_complete
-- **Description**: Requires scanning all artifacts in a specific museum
-- **Calculation**: progress = 1 if all artifacts scanned, else 0
-- **Completion**: museum_scans >= total_artifacts_in_museum
+**Removed** Previous requirement types (scan_count, museum_visit, all_museums, area_complete, first_steps) have been removed as part of the simplification effort.
 
 **Section sources**
-- [main.py:777-837](file://main.py#L777-L837)
-- [main.py:787-812](file://main.py#L787-L812)
+- [main.py:696-741](file://main.py#L696-L741)
+- [main.py:705-708](file://main.py#L705-L708)
 
 ### POST /users/{user_id}/achievements/reset/{museum_id} Endpoint
 
@@ -230,6 +221,8 @@ NextAchievement --> |No| ReturnResults["Return Achievement Summary"]
 - **Method**: POST
 - **Path**: /users/{user_id}/achievements/reset/{museum_id}
 - **Description**: Resets user achievements specific to a museum
+
+**Updated** The reset operation now works exclusively with museum-specific achievements, removing support for global achievement resets.
 
 #### Request Parameters
 - user_id (path parameter): Integer identifier of the user
@@ -256,20 +249,21 @@ API-->>Client : {"message" : "Achievements reset for museum {museum_id}"}
 ```
 
 **Diagram sources**
-- [main.py:725-735](file://main.py#L725-L735)
+- [main.py:644-654](file://main.py#L644-L654)
 
 #### Reset Behavior
 - Only museum-specific achievements are reset (not global achievements)
 - The operation removes all UserAchievement records for the specified user and museum combination
 - After reset, the user can earn the achievements again upon meeting the criteria
+- Reset operations are scoped to the specific museum context
 
 **Section sources**
-- [main.py:725-735](file://main.py#L725-L735)
+- [main.py:644-654](file://main.py#L644-L654)
 
 ### Data Models and Relationships
 
 #### Achievement Model
-The Achievement model defines the structure for achievement definitions:
+**Updated** The Achievement model now enforces museum-specific requirements:
 
 ```mermaid
 erDiagram
@@ -315,14 +309,18 @@ MUSEUM ||--o{ ACHIEVEMENT : "defines"
 **Diagram sources**
 - [models.py:86-105](file://models.py#L86-L105)
 
+**Updated** The Achievement model now requires a museum_id foreign key, eliminating support for global achievements. All achievements are now museum-specific.
+
 #### UserAchievement Model
 The UserAchievement model tracks individual user progress:
 
 - **user_id**: Links to the User table
 - **achievement_id**: Links to the Achievement table
-- **museum_id**: Tracks which museum the achievement was earned in (nullable for global achievements)
+- **museum_id**: Tracks which museum the achievement was earned in (required for museum-specific achievements)
 - **is_completed**: Boolean flag indicating achievement completion
 - **completed_at**: Timestamp when the achievement was completed
+
+**Updated** The UserAchievement model now requires museum_id context, aligning with the simplified achievement system that focuses on museum-specific tracking.
 
 **Section sources**
 - [models.py:86-105](file://models.py#L86-L105)
@@ -376,13 +374,13 @@ Schemas --> FastAPI
 The achievement system implements several performance optimizations:
 
 ### Database Query Optimization
-- Single pass through achievements to calculate progress
-- Efficient counting of museum scans using dictionary aggregation
-- Batch processing of achievement updates
+- Single pass through achievements to calculate progress for specific museum
+- Efficient counting of museum scans using artifact filtering by museum_id
+- Batch processing of achievement updates with transaction commits
 
 ### Memory Management
 - Dictionary-based caching of completed achievements
-- Efficient artifact ID extraction and filtering
+- Efficient artifact ID extraction and filtering by museum context
 - Minimal memory footprint for progress calculations
 
 ### Database Connection Management
@@ -397,20 +395,20 @@ The achievement system implements several performance optimizations:
 #### Achievement Not Completing
 **Symptoms**: Achievement shows progress but never completes
 **Causes**:
-- Requirement value not met
+- Requirement value not met for museum context
 - Database synchronization issues
 - Incorrect requirement type configuration
 
 **Solutions**:
-- Verify requirement values in the database
-- Check user collection records
+- Verify requirement values in the database for the specific museum
+- Check user collection records for the correct museum
 - Confirm achievement type matches expected behavior
 
 #### Reset Not Working
 **Symptoms**: POST /users/{user_id}/achievements/reset/{museum_id} returns success but achievements remain
 **Causes**:
 - Wrong museum_id parameter
-- User has global achievements that weren't reset
+- User has achievements from other museums that weren't reset
 - Database transaction issues
 
 **Solutions**:
@@ -431,17 +429,17 @@ The achievement system implements several performance optimizations:
 - Implement caching for frequently accessed data
 
 **Section sources**
-- [main.py:725-735](file://main.py#L725-L735)
-- [main.py:777-837](file://main.py#L777-L837)
+- [main.py:644-654](file://main.py#L644-L654)
+- [main.py:696-741](file://main.py#L696-L741)
 
 ## Conclusion
-The MuseAmigo achievement system provides a robust framework for tracking user progress and rewarding engagement with museum artifacts. The system supports multiple achievement types with clear progression logic and integrates seamlessly with the existing user collection system.
+The MuseAmigo achievement system has been successfully refactored to focus exclusively on museum-specific achievements with a simplified approach. The system now provides a streamlined framework for tracking user progress within individual museums, emphasizing museum_scan_count requirements with clear progression logic.
 
-Key strengths of the implementation include:
-- Comprehensive achievement requirement types covering various user behaviors
-- Real-time progress calculation with automatic completion detection
+Key strengths of the simplified implementation include:
+- Clear focus on museum-specific achievement tracking
+- Real-time progress calculation with automatic completion detection for museum contexts
 - Flexible reset mechanism for museum-specific achievements
 - Clear separation of concerns between achievement definitions and user progress tracking
 - Efficient database operations with proper indexing and connection management
 
-The system is designed to be extensible, allowing for easy addition of new achievement types and requirements as the application evolves.
+The system maintains its extensibility while providing a more focused and manageable achievement system that aligns with the current museum-based experience design. Future enhancements can be built upon this simplified foundation while maintaining the core principle of museum-specific achievement tracking.
