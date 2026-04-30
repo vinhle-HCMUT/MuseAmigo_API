@@ -21,6 +21,7 @@ engine = create_engine(
     max_overflow=20,  # Additional connections when pool is full
     pool_pre_ping=True,  # Validate connections before use
     pool_recycle=3600,  # Recycle connections every hour
+    connect_args={"connect_timeout": 10},  # 10 second connection timeout
 )
 
 # The SessionLocal class will be used to create actual database sessions for your API requests

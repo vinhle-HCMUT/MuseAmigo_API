@@ -454,21 +454,36 @@ def migrate_add_user_reset_columns():
 
 @app.on_event("startup")
 def startup_seed_data():
-    # Run migrations first to ensure schema is up-to-date
-    migrate_add_audio_asset_column()
-    migrate_add_user_reset_columns()
-    
-    db = next(get_db())
     try:
-        seed_museums(db)
-        seed_artifacts(db)
-        seed_exhibitions(db)
-        seed_routes(db)
-        seed_achievements(db)
-        # Cleanup: remove artifact id 1 (IP-001 was removed from seed data)
-        _delete_artifact_id_one(db)
-    finally:
-        db.close()
+        # Run migrations first to ensure schema is up-to-date
+        print("Running migration: audio_asset column...")
+        migrate_add_audio_asset_column()
+        print("Running migration: user reset columns...")
+        migrate_add_user_reset_columns()
+        
+        print("Opening DB session for seeding...")
+        db = next(get_db())
+        try:
+            print("Seeding museums...")
+            seed_museums(db)
+            print("Seeding artifacts...")
+            seed_artifacts(db)
+            print("Seeding exhibitions...")
+            seed_exhibitions(db)
+            print("Seeding routes...")
+            seed_routes(db)
+            print("Seeding achievements...")
+            seed_achievements(db)
+            print("Cleaning up artifact id 1...")
+            _delete_artifact_id_one(db)
+            print("Startup seeding complete.")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"ERROR during startup: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't re-raise — let the app start even if seeding fails
 
 
 def _delete_artifact_id_one(db: Session) -> None:
@@ -879,3 +894,10 @@ def chat_with_ogima(chat_request: schemas.ChatRequest):
     except Exception as e:
         # If the AI or Google's server crashes, we catch it so the app doesn't break
         raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

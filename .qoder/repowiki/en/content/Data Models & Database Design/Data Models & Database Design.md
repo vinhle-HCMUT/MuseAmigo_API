@@ -17,6 +17,7 @@
 - Added password reset functionality documentation with new endpoints and schemas
 - Enhanced security section to cover password reset workflow
 - Updated Pydantic validation schemas to include password reset request models
+- Added database migration documentation for automatic column addition
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -433,6 +434,19 @@ API-->>Client : ChatResponse
 **Section sources**
 - [schemas.py:4-144](file://schemas.py#L4-L144)
 
+### Database Migration System
+The application includes an automated database migration system that ensures schema consistency across deployments:
+
+- **Audio Asset Migration**: Automatically adds audio_asset column to artifacts table if missing
+- **Password Reset Migration**: Automatically adds reset_token and reset_token_expires columns to users table if missing
+- **Startup Process**: Both migrations run during application startup before data seeding
+
+The migration functions use exception handling to gracefully manage cases where columns already exist, preventing errors during subsequent deployments.
+
+**Section sources**
+- [main.py:402-452](file://main.py#L402-L452)
+- [main.py:455-471](file://main.py#L455-L471)
+
 ## Dependency Analysis
 - Database Layer
   - database.py defines engine, session factory, and dependency get_db().
@@ -487,11 +501,13 @@ A --> S
 - **Updated**: Password Reset Performance
   - Token generation uses cryptographically secure secrets.token_urlsafe(32) for 256-bit entropy.
   - Expiration checking uses ISO format timestamps for efficient parsing and comparison.
+  - Migration system runs only during startup to minimize runtime overhead.
 - Recommendations
   - Add composite indexes for frequently filtered pairs (e.g., Collection(user_id, artifact_id)).
   - Consider pagination for large lists (e.g., /museums, /museums/{museum_id}/exhibitions).
   - Use bulk inserts for seeding operations to reduce round-trips.
   - **Updated**: Consider adding indexes on reset_token and reset_token_expires for token lookup performance.
+  - **Updated**: Consider implementing rate limiting for password reset requests to prevent abuse.
 
 **Section sources**
 - [database.py:18-38](file://database.py#L18-L38)
@@ -518,6 +534,7 @@ A --> S
   - Invalid Token: Token not found or expired returns 400 error.
   - Expired Token: Token timestamp check fails returns 400 error.
   - Weak Password: New password less than 6 characters returns 400 error.
+  - Migration Errors: Column already exists errors are caught and logged as warnings.
 - Migration Errors
   - Cause: Attempting to add an already-existing column.
   - Resolution: Catch exceptions and log a note; continue.
@@ -529,7 +546,7 @@ A --> S
 - [main.py:491-510](file://main.py#L491-L510)
 
 ## Conclusion
-The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas for validation, SQLAlchemy models for persistence, and FastAPI for orchestration. The schema emphasizes user-centric discovery, museum navigation, and gamification through achievements. Robust indexing and connection pooling support performance, while explicit validation and integrity checks ensure data quality. The AI agent augments the system by dynamically querying the database to provide contextual assistance. **Updated**: Enhanced security measures now include comprehensive password reset functionality with secure token generation, expiration handling, and protection against email enumeration attacks.
+The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas for validation, SQLAlchemy models for persistence, and FastAPI for orchestration. The schema emphasizes user-centric discovery, museum navigation, and gamification through achievements. Robust indexing and connection pooling support performance, while explicit validation and integrity checks ensure data quality. The AI agent augments the system by dynamically querying the database to provide contextual assistance. **Updated**: Enhanced security measures now include comprehensive password reset functionality with secure token generation, expiration handling, and protection against email enumeration attacks. The automated migration system ensures database schema consistency across deployments.
 
 ## Appendices
 
@@ -556,10 +573,13 @@ The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas f
   - Expiration set to 1 hour for time-limited access.
   - Email enumeration protection: success response regardless of email existence.
   - Token validation includes existence, format, and expiration checks.
+  - Password reset workflow stores plain text passwords (placeholder) - should be hashed in production.
 - Recommendations
   - Replace plaintext comparison with hashed password verification.
   - Enforce stronger password policies and consider rate limiting for login attempts.
-  - **Updated**: Consider implementing rate limiting for password reset requests.
+  - **Updated**: Implement bcrypt password hashing for all password storage.
+  - **Updated**: Add rate limiting for password reset requests (e.g., 5 requests per hour per IP).
+  - **Updated**: Consider implementing CSRF protection for password reset endpoints.
 
 **Section sources**
 - [security.py:1-12](file://security.py#L1-L12)
@@ -591,3 +611,22 @@ The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas f
 **Section sources**
 - [main.py:525-570](file://main.py#L525-L570)
 - [security.py:1-12](file://security.py#L1-L12)
+
+### Database Migration System Details
+- **Audio Asset Migration** (`migrate_add_audio_asset_column()`)
+  - Adds audio_asset column to artifacts table if missing
+  - Handles duplicate column errors gracefully
+  - Logs migration status to console
+- **Password Reset Migration** (`migrate_add_user_reset_columns()`)
+  - Adds reset_token column to users table if missing
+  - Adds reset_token_expires column to users table if missing
+  - Handles duplicate column errors gracefully
+  - Logs migration status to console
+- **Startup Integration**
+  - Both migrations run during application startup
+  - Ensures database schema consistency across deployments
+  - Continues operation even if migrations encounter warnings
+
+**Section sources**
+- [main.py:402-452](file://main.py#L402-L452)
+- [main.py:455-471](file://main.py#L455-L471)
