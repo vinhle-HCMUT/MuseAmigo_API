@@ -5,7 +5,8 @@ from sqlalchemy import text, func
 import models, schemas
 from database import engine, get_db
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta
+import secrets
 from agent import agent_executor
 from sqlalchemy.exc import IntegrityError
 
@@ -75,16 +76,6 @@ def seed_museums(db: Session) -> None:
 def seed_artifacts(db: Session) -> None:
     seed_data = [
         # Independence Palace Artifacts
-        {
-            "artifact_code": "IP-001",
-            "title": "Presidential Desk",
-            "year": "1960s",
-            "description": "The original presidential desk used by President Nguyễn Văn Thiệu during the Vietnam War. This desk witnessed many important historical decisions that shaped the future of South Vietnam.",
-            "is_3d_available": True,
-            "unity_prefab_name": "Model_Presidential_Desk",
-            "audio_asset": "assets/audio/artifact_001.wav",
-            "museum_id": 1  # Independence Palace
-        },
         {
             "artifact_code": "IP-002", 
             "title": "T-54 Tank",
@@ -441,8 +432,19 @@ def startup_seed_data():
         seed_exhibitions(db)
         seed_routes(db)
         seed_achievements(db)
+        # Cleanup: remove artifact id 1 (IP-001 was removed from seed data)
+        _delete_artifact_id_one(db)
     finally:
         db.close()
+
+
+def _delete_artifact_id_one(db: Session) -> None:
+    artifact = db.query(models.Artifact).filter(models.Artifact.id == 1).first()
+    if artifact:
+        # Delete associated collections first to avoid FK constraint issues
+        db.query(models.Collection).filter(models.Collection.artifact_id == 1).delete(synchronize_session=False)
+        db.delete(artifact)
+        db.commit()
 
 
 # --- Your old test routes ---
@@ -520,6 +522,53 @@ def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db
         "full_name": db_user.full_name
     }
 
+@app.post("/auth/forgot-password")
+def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == data.email.strip()).first()
+    if not db_user:
+        # Return success even if email not found to prevent email enumeration
+        return {"message": "If the email exists, a reset token has been generated."}
+    
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+    db_user.reset_token = token
+    db_user.reset_token_expires = expires
+    db.commit()
+    
+    # In production, send email here. For demo, return token in response.
+    return {
+        "message": "Password reset token generated.",
+        "token": token,
+        "expires": expires
+    }
+
+@app.post("/auth/reset-password")
+def reset_password(data: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.reset_token == data.token.strip()).first()
+    if not db_user:
+        raise HTTPException(status_code=400, detail="Invalid or expired token.")
+    
+    if not db_user.reset_token_expires:
+        raise HTTPException(status_code=400, detail="Invalid or expired token.")
+    
+    try:
+        expires = datetime.fromisoformat(db_user.reset_token_expires)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token.")
+    
+    if datetime.utcnow() > expires:
+        raise HTTPException(status_code=400, detail="Token has expired.")
+    
+    if not data.new_password or len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    
+    db_user.hashed_password = data.new_password
+    db_user.reset_token = None
+    db_user.reset_token_expires = None
+    db.commit()
+    
+    return {"message": "Password has been reset successfully."}
+
 # 1. Endpoint to load the Map/Discovery screen
 @app.get("/museums", response_model=list[schemas.MuseumResponse])
 def get_all_museums(db: Session = Depends(get_db)):
@@ -546,7 +595,7 @@ def get_artifact(artifact_code: str, db: Session = Depends(get_db)):
     if not artifact:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
-            detail=f"Artifact code '{artifact_code}' not found. Available codes: IP-001, IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002"
+            detail=f"Artifact code '{artifact_code}' not found. Available codes: IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002"
         )
         
     return artifact
@@ -687,10 +736,15 @@ def get_user_achievements(user_id: int, museum_id: int = Query(..., description=
 
     # Calculate total points from completed achievements for this museum
     total_points = sum(
-        db.query(models.Achievement).filter(
-            models.Achievement.id == ua.achievement_id
-        ).first().points
-        for ua in user_achievements if ua.is_completed
+        ach.points
+        for ach in db.query(models.Achievement)
+        .join(models.UserAchievement, models.Achievement.id == models.UserAchievement.achievement_id)
+        .filter(
+            models.UserAchievement.user_id == user_id,
+            models.UserAchievement.museum_id == museum_id,
+            models.UserAchievement.is_completed == True
+        )
+        .all()
     )
 
     # Check and update achievement progress

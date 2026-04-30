@@ -128,6 +128,13 @@ class UserSettingsUpdate(BaseModel):
     theme: str
     language: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # What Unity sends when the user types a message to Ogima
 class ChatRequest(BaseModel):
     message: str

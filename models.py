@@ -10,8 +10,10 @@ class User(Base):
     hashed_password = Column(String(255))
     is_active = Column(Boolean, default=True)
 
-    theme = Column(String(20), default="light") # e.g., "light" or "dark"
-    language = Column(String(20), default="en") # e.g., "en", "vi", or "ja"
+    theme = Column(String(20), default="light") # e.g. "light" or "dark"
+    language = Column(String(20), default="en") # e.g. "en", "vi", or "ja"
+    reset_token = Column(String(255), nullable=True)
+    reset_token_expires = Column(String(50), nullable=True)
 
 class Museum(Base):
     __tablename__ = "museums"
