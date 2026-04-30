@@ -10,6 +10,13 @@
 - [README.md](file://README.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Updated artifact catalog to reflect removal of IP-001 (Presidential Desk) from initial seed data
+- Revised available artifact codes and examples to match current database state
+- Updated error handling examples to reflect current available artifact codes
+- Modified educational content references to remove Presidential Desk as a learning resource
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -23,7 +30,11 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document provides comprehensive API documentation for artifact discovery endpoints, focusing on the GET /artifacts/{artifact_code} endpoint that enables artifact lookup by QR code. The endpoint supports flexible search capabilities including case-insensitive matching and space handling, returning a structured ArtifactResponse containing artifact details such as artifact_code, title, year, description, 3D availability flags, Unity prefab names, and audio asset paths. The documentation covers artifact code formatting requirements, search algorithms, error handling for not found artifacts, integration with the Artifact model, relationships between artifacts and museums, 3D model integration, and audio asset generation. It also includes examples of artifact codes and response structures.
+This document provides comprehensive API documentation for artifact discovery endpoints, focusing on the GET /artifacts/{artifact_code} endpoint that enables artifact lookup by QR code. The endpoint supports flexible search capabilities including case-insensitive matching and space handling, returning a structured ArtifactResponse containing artifact details such as artifact_code, title, year, description, 3D availability flags, Unity prefab names, and audio asset paths. 
+
+**Updated**: The artifact discovery experience has been adjusted to reflect the removal of the Presidential Desk (IP-001) from initial seed data, affecting the educational content landscape. The current available artifacts provide diverse historical perspectives across different museums and time periods.
+
+The documentation covers artifact code formatting requirements, search algorithms, error handling for not found artifacts, integration with the Artifact model, relationships between artifacts and museums, 3D model integration, and audio asset generation. It also includes examples of current artifact codes and response structures.
 
 ## Project Structure
 The backend is built with FastAPI and SQLAlchemy, providing REST endpoints for museum and artifact management. The artifact discovery endpoint is implemented alongside other endpoints for authentication, collections, exhibitions, tickets, routes, achievements, and AI chat assistance.
@@ -68,6 +79,8 @@ The artifact discovery system consists of several key components:
 - **ArtifactResponse Schema**: Validates and serializes artifact data for API responses
 - **Database Session Management**: Provides dependency injection for database operations
 - **Search Algorithm**: Implements flexible artifact lookup with case-insensitive and space-handling capabilities
+
+**Updated**: The current artifact catalog includes 8 distinct artifacts across 4 museums, providing comprehensive coverage of Vietnamese history from colonial to modern periods. The removal of IP-001 affects the educational narrative but maintains historical diversity through other artifacts.
 
 Key implementation highlights:
 - Artifact codes are stored in uppercase format in the database
@@ -145,26 +158,30 @@ The endpoint returns a structured ArtifactResponse containing:
 | Field | Type | Description | Example |
 |-------|------|-------------|---------|
 | id | integer | Unique artifact identifier | 1 |
-| artifact_code | string | QR code identifier | "IP-001" |
-| title | string | Artifact name/title | "Presidential Desk" |
-| year | string | Historical period/year | "1960s" |
-| description | string | Detailed artifact description | "The original presidential desk..." |
+| artifact_code | string | QR code identifier | "IP-002" |
+| title | string | Artifact name/title | "T-54 Tank" |
+| year | string | Historical period/year | "1975" |
+| description | string | Detailed artifact description | "The famous T-54 tank that crashed through the gates..." |
 | is_3d_available | boolean | 3D model availability flag | true |
 | museum_id | integer | Associated museum identifier | 1 |
-| unity_prefab_name | string | Unity 3D prefab reference | "Model_Presidential_Desk" |
-| audio_asset | string | Audio asset file path | "assets/audio/artifact_001.wav" |
+| unity_prefab_name | string | Unity 3D prefab reference | "Model_T54_Tank" |
+| audio_asset | string | Audio asset file path | "assets/audio/artifact_002.wav" |
 
 #### Artifact Code Formatting Requirements
 - **Case Sensitivity**: Automatically converted to uppercase for storage and comparison
 - **Whitespace Handling**: Spaces are preserved in database storage but ignored during search
-- **Format Examples**: "IP-001", "WRM-002", "FAM-001", "HCM-002"
+- **Format Examples**: "IP-002", "IP-003", "WRM-001", "WRM-002", "FAM-001", "FAM-002", "HCM-001", "HCM-002"
 - **Museum Prefixes**: IP (Independence Palace), WRM (War Remnants Museum), FAM (Fine Arts Museum), HCM (HCMC Museum)
+
+**Updated**: The current artifact catalog excludes IP-001 (Presidential Desk) and includes 8 artifacts distributed across 4 museums, providing diverse historical perspectives from the French colonial period through the modern era.
 
 #### Error Handling
 The endpoint implements comprehensive error handling:
 - **404 Not Found**: When artifact code is not found in either exact or space-removed search
 - **Error Message**: Includes the requested code and available artifact codes for debugging
 - **Graceful Degradation**: Falls back from exact match to space-removed match automatically
+
+**Updated**: The error message now reflects the current available artifact codes: IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002.
 
 **Section sources**
 - [main.py:610-632](file://main.py#L610-L632)
@@ -345,10 +362,12 @@ The artifact discovery endpoint is optimized for efficiency:
 - Non-existent artifact code
 
 **Solutions**:
-- Verify artifact code matches available formats
+- Verify artifact code matches available formats from the current catalog
 - Check case sensitivity (codes are stored uppercase)
 - Ensure QR code includes proper spacing
-- Confirm artifact exists in database
+- Confirm artifact exists in database with current available codes
+
+**Updated**: Current available artifact codes: IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002.
 
 #### Database Connection Issues
 **Symptoms**: Internal server errors during artifact lookup
@@ -382,7 +401,9 @@ The artifact discovery endpoint is optimized for efficiency:
 - [generate_audio.py:41-77](file://generate_audio.py#L41-L77)
 
 ## Conclusion
-The artifact discovery endpoint provides a robust, flexible solution for QR code-based artifact lookup with comprehensive error handling and performance optimization. The implementation supports case-insensitive matching, space handling, and integrates seamlessly with Unity's 3D and audio systems. The modular architecture ensures maintainability while the database design supports scalable artifact management across multiple museums.
+The artifact discovery endpoint provides a robust, flexible solution for QR code-based artifact lookup with comprehensive error handling and performance optimization. The implementation supports case-insensitive matching, space handling, and integrates seamlessly with Unity's 3D and audio systems. 
+
+**Updated**: The current implementation reflects the removal of the Presidential Desk (IP-001) from initial seed data, resulting in a more focused artifact catalog with 8 carefully selected items that provide comprehensive historical coverage across different time periods and cultural contexts. The modular architecture ensures maintainability while the database design supports scalable artifact management across multiple museums.
 
 Key strengths include:
 - Flexible search algorithms accommodating various QR code formats
@@ -402,24 +423,26 @@ Key strengths include:
 - **Response**: `ArtifactResponse` object
 - **Status Codes**: 200 OK, 404 Not Found
 
-#### Example Artifact Codes
-- **Independence Palace**: IP-001, IP-002, IP-003
-- **War Remnants Museum**: WRM-001, WRM-002
-- **Fine Arts Museum**: FAM-001, FAM-002
-- **HCMC Museum**: HCM-001, HCM-002
+#### Current Artifact Catalog
+**Updated**: The current available artifacts provide diverse historical perspectives:
+
+- **Independence Palace (IP)**: IP-002 (T-54 Tank), IP-003 (Presidential Throne)
+- **War Remnants Museum (WRM)**: WRM-001 (Guillotine), WRM-002 (Tiger Cages)
+- **Fine Arts Museum (FAM)**: FAM-001 (Lacquer Painting 'Rural Life'), FAM-002 (Buddhist Statue)
+- **HCMC Museum (HCM)**: HCM-001 (Traditional Ao Dai), HCM-002 (Saigon Map 1930)
 
 #### Response Structure Example
 ```json
 {
   "id": 1,
-  "artifact_code": "IP-001",
-  "title": "Presidential Desk",
-  "year": "1960s",
-  "description": "The original presidential desk used by President Nguyễn Văn Thiệu...",
+  "artifact_code": "IP-002",
+  "title": "T-54 Tank",
+  "year": "1975",
+  "description": "The famous T-54 tank that crashed through the gates of Independence Palace on April 30, 1975, symbolizing the end of the Vietnam War. This tank became an iconic symbol of reunification.",
   "is_3d_available": true,
   "museum_id": 1,
-  "unity_prefab_name": "Model_Presidential_Desk",
-  "audio_asset": "assets/audio/artifact_001.wav"
+  "unity_prefab_name": "Model_T54_Tank",
+  "audio_asset": "assets/audio/artifact_002.wav"
 }
 ```
 

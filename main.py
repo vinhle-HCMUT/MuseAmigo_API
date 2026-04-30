@@ -420,10 +420,43 @@ def migrate_add_audio_asset_column():
         db.close()
 
 
+def migrate_add_user_reset_columns():
+    """Add reset_token and reset_token_expires columns to users table if they don't exist"""
+    db = next(get_db())
+    try:
+        db.execute(text("""
+            ALTER TABLE users ADD COLUMN reset_token VARCHAR(255) NULL
+        """))
+        db.commit()
+        print("✓ Added reset_token column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ reset_token column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+
+    try:
+        db.execute(text("""
+            ALTER TABLE users ADD COLUMN reset_token_expires VARCHAR(50) NULL
+        """))
+        db.commit()
+        print("✓ Added reset_token_expires column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ reset_token_expires column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup_seed_data():
-    # Run migration first to ensure schema is up-to-date
+    # Run migrations first to ensure schema is up-to-date
     migrate_add_audio_asset_column()
+    migrate_add_user_reset_columns()
     
     db = next(get_db())
     try:

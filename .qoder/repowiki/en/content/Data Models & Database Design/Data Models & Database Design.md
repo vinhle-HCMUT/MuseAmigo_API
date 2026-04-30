@@ -11,6 +11,13 @@
 - [requirements.txt](file://requirements.txt)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Updated User model documentation to include new reset_token and reset_token_expires fields
+- Added password reset functionality documentation with new endpoints and schemas
+- Enhanced security section to cover password reset workflow
+- Updated Pydantic validation schemas to include password reset request models
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -24,7 +31,7 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes the data model and database design for the MuseAmigo Backend. It covers entity definitions, relationships, constraints, indexes, and how SQLAlchemy ORM models map to Pydantic validation schemas. It also explains database connection management, session handling, connection pooling, and performance considerations. Finally, it documents business logic constraints and data integrity requirements enforced by the backend.
+This document describes the data model and database design for the MuseAmigo Backend. It covers entity definitions, relationships, constraints, indexes, and how SQLAlchemy ORM models map to Pydantic validation schemas. It also explains database connection management, session handling, connection pooling, and performance considerations. Finally, it documents business logic constraints, data integrity requirements, and security enhancements including password reset functionality.
 
 ## Project Structure
 The backend is organized around four primary modules:
@@ -66,27 +73,27 @@ Pool --> DB
 **Diagram sources**
 - [main.py:12-23](file://main.py#L12-L23)
 - [database.py:18-38](file://database.py#L18-L38)
-- [schemas.py:1-137](file://schemas.py#L1-L137)
-- [models.py:1-105](file://models.py#L1-L105)
+- [schemas.py:1-144](file://schemas.py#L1-L144)
+- [models.py:1-107](file://models.py#L1-L107)
 - [agent.py:6-105](file://agent.py#L6-L105)
 
 **Section sources**
 - [main.py:12-23](file://main.py#L12-L23)
 - [database.py:18-38](file://database.py#L18-L38)
-- [schemas.py:1-137](file://schemas.py#L1-L137)
-- [models.py:1-105](file://models.py#L1-L105)
+- [schemas.py:1-144](file://schemas.py#L1-L144)
+- [models.py:1-107](file://models.py#L1-L107)
 - [agent.py:6-105](file://agent.py#L6-L105)
 
 ## Core Components
 This section documents each core model, its fields, data types, constraints, indexes, and relationships. It also explains how Pydantic schemas map to SQLAlchemy models and how endpoints use them.
 
 - User
-  - Purpose: Stores user profile, authentication, and preferences.
-  - Fields: id (Integer, PK, indexed), full_name (String), email (String, unique, indexed), hashed_password (String), is_active (Boolean), theme (String), language (String).
-  - Constraints: Unique email; default theme and language; default active flag.
+  - Purpose: Stores user profile, authentication, preferences, and password reset tokens.
+  - Fields: id (Integer, PK, indexed), full_name (String), email (String, unique, indexed), hashed_password (String), is_active (Boolean), theme (String), language (String), reset_token (String, nullable), reset_token_expires (String, nullable).
+  - Constraints: Unique email; default theme and language; default active flag; reset token fields are nullable for security.
   - Indexes: id, email.
   - Relationships: None (standalone).
-  - Pydantic mapping: UserCreate (input), UserResponse (output), UserSettingsUpdate (partial update).
+  - Pydantic mapping: UserCreate (input), UserResponse (output), UserSettingsUpdate (partial update), ForgotPasswordRequest (password reset input), ResetPasswordRequest (password reset input).
 
 - Museum
   - Purpose: Stores museum metadata and geographic coordinates.
@@ -153,8 +160,8 @@ This section documents each core model, its fields, data types, constraints, ind
   - Pydantic mapping: UserAchievementResponse.
 
 **Section sources**
-- [models.py:4-105](file://models.py#L4-L105)
-- [schemas.py:4-137](file://schemas.py#L4-L137)
+- [models.py:4-107](file://models.py#L4-L107)
+- [schemas.py:4-144](file://schemas.py#L4-L144)
 
 ## Architecture Overview
 The backend follows a layered architecture:
@@ -174,6 +181,8 @@ class User {
 +bool is_active
 +string theme
 +string language
++string reset_token
++string reset_token_expires
 }
 class Museum {
 +int id
@@ -250,7 +259,7 @@ Museum "1" <-- "many" UserAchievement : "context_of"
 ```
 
 **Diagram sources**
-- [models.py:4-105](file://models.py#L4-L105)
+- [models.py:4-107](file://models.py#L4-L107)
 
 ## Detailed Component Analysis
 
@@ -268,9 +277,10 @@ Museum "1" <-- "many" UserAchievement : "context_of"
   - Achievements.museum_id may be null (global achievements).
   - UserAchievements.museum_id may be null (global/unscoped).
   - UserAchievements.completed_at may be null until completion.
+  - **Updated**: User.reset_token and User.reset_token_expires are nullable for security.
 
 **Section sources**
-- [models.py:7-105](file://models.py#L7-L105)
+- [models.py:7-107](file://models.py#L7-L107)
 
 ### SQLAlchemy ORM Relationships
 - One-to-many:
@@ -289,7 +299,7 @@ Museum "1" <-- "many" UserAchievement : "context_of"
 Note: While explicit relationship declarations are not present in the models, the foreign key fields and shared primary keys define these associations. Application-level logic enforces composite uniqueness for Collection.
 
 **Section sources**
-- [models.py:4-105](file://models.py#L4-L105)
+- [models.py:4-107](file://models.py#L4-L107)
 
 ### Pydantic Validation Schemas and Mapping
 - Input/Output Contracts:
@@ -300,6 +310,7 @@ Note: While explicit relationship declarations are not present in the models, th
   - Routes: RouteResponse
   - Achievements: AchievementResponse, UserAchievementResponse
   - Settings: UserSettingsUpdate
+  - **Updated**: Password Reset: ForgotPasswordRequest, ResetPasswordRequest
   - AI Chat: ChatRequest, ChatResponse
 - Mapping Behavior:
   - Pydantic models set from_attributes to True to allow reading from SQLAlchemy instances, simplifying serialization.
@@ -308,12 +319,11 @@ Note: While explicit relationship declarations are not present in the models, th
   - Login validates presence of email and password and compares stored password field against provided plaintext (placeholder).
   - Artifact retrieval trims and normalizes artifact_code for case-insensitive matching and partial-space normalization.
   - Collection creation prevents duplicate entries for the same user-artifact pair.
+  - **Updated**: Password reset requests validate email format; reset requests validate token format and expiration.
 
 **Section sources**
-- [schemas.py:4-137](file://schemas.py#L4-L137)
-- [main.py:538-601](file://main.py#L538-L601)
-- [main.py:609-632](file://main.py#L609-L632)
-- [main.py:634-661](file://main.py#L634-L661)
+- [schemas.py:4-144](file://schemas.py#L4-L144)
+- [main.py:525-570](file://main.py#L525-L570)
 
 ### Business Logic and Data Integrity
 - Registration:
@@ -328,6 +338,9 @@ Note: While explicit relationship declarations are not present in the models, th
   - Generates a unique QR code string and persists Ticket record.
 - Achievement Calculation:
   - Computes progress based on scan counts per museum, total scans, and museum visits; auto-completes achievements and updates UserAchievement records.
+- **Updated**: Password Reset Workflow:
+  - Forgot Password: Generates secure random token, sets expiration to 1 hour, stores in database, returns success message (email enumeration protection).
+  - Reset Password: Validates token existence and expiration, hashes new password, clears reset fields, returns success.
 - Seeding and Migration:
   - On startup, ensures artifacts table has audio_asset column and seeds Museums, Artifacts, Exhibitions, Routes, and Achievements.
 
@@ -336,32 +349,27 @@ sequenceDiagram
 participant Client as "Client"
 participant API as "FastAPI"
 participant DB as "Database"
-Client->>API : POST "/auth/register" {full_name, email, password}
-API->>API : Validate inputs
-API->>DB : Insert User
-DB-->>API : Success or IntegrityError
-API-->>Client : UserResponse
-Client->>API : GET "/artifacts/{artifact_code}"
-API->>DB : Query Artifact (case-insensitive, normalize spaces)
-DB-->>API : Artifact or NotFound
-API-->>Client : ArtifactResponse
-Client->>API : POST "/collections" {user_id, artifact_id}
-API->>DB : Check duplicate (user_id, artifact_id)
-DB-->>API : Exists or Not Found
-API->>DB : Insert Collection
+Client->>API : POST "/auth/forgot-password" {email}
+API->>DB : Query User by email
+DB-->>API : User or None
+API->>API : Generate secure token + 1h expiry
+API->>DB : Store reset_token + reset_token_expires
 DB-->>API : Commit
-API-->>Client : CollectionResponse
+API-->>Client : Success message (no email enumeration)
+Client->>API : POST "/auth/reset-password" {token, new_password}
+API->>DB : Query User by reset_token
+DB-->>API : User or None
+API->>API : Validate token not expired
+API->>DB : Hash new password + clear reset fields
+DB-->>API : Commit
+API-->>Client : Success message
 ```
 
 **Diagram sources**
-- [main.py:538-601](file://main.py#L538-L601)
-- [main.py:609-632](file://main.py#L609-L632)
-- [main.py:634-661](file://main.py#L634-L661)
+- [main.py:525-570](file://main.py#L525-L570)
 
 **Section sources**
-- [main.py:538-601](file://main.py#L538-L601)
-- [main.py:609-632](file://main.py#L609-L632)
-- [main.py:634-661](file://main.py#L634-L661)
+- [main.py:525-570](file://main.py#L525-L570)
 - [main.py:512-526](file://main.py#L512-L526)
 - [main.py:491-510](file://main.py#L491-L510)
 
@@ -372,7 +380,7 @@ API-->>Client : CollectionResponse
   - get_exhibitions: Lists exhibitions for a given museum.
   - get_routes: Lists available routes for a given museum.
 - Execution:
-  - Uses LangGraph’s create_react_agent with a Gemini LLM and the above tools.
+  - Uses LangGraph's create_react_agent with a Gemini LLM and the above tools.
   - Each tool opens a new session, queries the database, and closes the session.
 
 ```mermaid
@@ -404,6 +412,7 @@ API-->>Client : ChatResponse
 - User
   - Input: UserCreate {full_name, email, password}
   - Output: UserResponse {id, full_name, email, theme, language}
+  - **Updated**: Password Reset: ForgotPasswordRequest {email}, ResetPasswordRequest {token, new_password}
 - Artifact
   - Output: ArtifactResponse {id, artifact_code, title, year, description, is_3d_available, museum_id, unity_prefab_name, audio_asset}
 - Collection
@@ -422,7 +431,7 @@ API-->>Client : ChatResponse
   - Output: UserAchievementResponse {id, user_id, achievement_id, museum_id, is_completed, completed_at}
 
 **Section sources**
-- [schemas.py:4-137](file://schemas.py#L4-L137)
+- [schemas.py:4-144](file://schemas.py#L4-L144)
 
 ## Dependency Analysis
 - Database Layer
@@ -452,16 +461,16 @@ A --> S
 
 **Diagram sources**
 - [database.py:18-38](file://database.py#L18-L38)
-- [models.py:1-105](file://models.py#L1-L105)
-- [schemas.py:1-137](file://schemas.py#L1-L137)
+- [models.py:1-107](file://models.py#L1-L107)
+- [schemas.py:1-144](file://schemas.py#L1-L144)
 - [main.py:12-23](file://main.py#L12-L23)
 - [security.py:1-12](file://security.py#L1-L12)
 - [agent.py:6-105](file://agent.py#L6-L105)
 
 **Section sources**
 - [database.py:18-38](file://database.py#L18-L38)
-- [models.py:1-105](file://models.py#L1-L105)
-- [schemas.py:1-137](file://schemas.py#L1-L137)
+- [models.py:1-107](file://models.py#L1-L107)
+- [schemas.py:1-144](file://schemas.py#L1-L144)
 - [main.py:12-23](file://main.py#L12-L23)
 - [security.py:1-12](file://security.py#L1-L12)
 - [agent.py:6-105](file://agent.py#L6-L105)
@@ -472,19 +481,24 @@ A --> S
 - Indexes
   - id is indexed on all tables; additional indexes on email, artifact_code, qr_code, and name optimize frequent lookups.
 - Query Patterns
-  - Endpoints leverage filtered queries with joins and aggregations (e.g., counting artifacts per museum for “area_complete” achievements).
+  - Endpoints leverage filtered queries with joins and aggregations (e.g., counting artifacts per museum for "area_complete" achievements).
 - Session Management
   - get_db() yields a session per request and closes it in a finally block; agent tools open/close sessions per tool invocation.
+- **Updated**: Password Reset Performance
+  - Token generation uses cryptographically secure secrets.token_urlsafe(32) for 256-bit entropy.
+  - Expiration checking uses ISO format timestamps for efficient parsing and comparison.
 - Recommendations
   - Add composite indexes for frequently filtered pairs (e.g., Collection(user_id, artifact_id)).
   - Consider pagination for large lists (e.g., /museums, /museums/{museum_id}/exhibitions).
   - Use bulk inserts for seeding operations to reduce round-trips.
+  - **Updated**: Consider adding indexes on reset_token and reset_token_expires for token lookup performance.
 
 **Section sources**
 - [database.py:18-38](file://database.py#L18-L38)
-- [models.py:7-105](file://models.py#L7-L105)
+- [models.py:7-107](file://models.py#L7-L107)
 - [main.py:664-700](file://main.py#L664-L700)
 - [main.py:738-844](file://main.py#L738-L844)
+- [main.py:525-570](file://main.py#L525-L570)
 
 ## Troubleshooting Guide
 - IntegrityError on Registration
@@ -499,18 +513,23 @@ A --> S
 - Duplicate Collection Entry
   - Cause: Same user attempting to collect the same artifact twice.
   - Resolution: Check existing record and return a 400 error if found.
+- **Updated**: Password Reset Issues
+  - Forgot Password: Email not found returns success message (no email enumeration).
+  - Invalid Token: Token not found or expired returns 400 error.
+  - Expired Token: Token timestamp check fails returns 400 error.
+  - Weak Password: New password less than 6 characters returns 400 error.
 - Migration Errors
   - Cause: Attempting to add an already-existing column.
   - Resolution: Catch exceptions and log a note; continue.
 
 **Section sources**
-- [main.py:538-601](file://main.py#L538-L601)
+- [main.py:525-570](file://main.py#L525-L570)
 - [main.py:609-632](file://main.py#L609-L632)
 - [main.py:634-661](file://main.py#L634-L661)
 - [main.py:491-510](file://main.py#L491-L510)
 
 ## Conclusion
-The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas for validation, SQLAlchemy models for persistence, and FastAPI for orchestration. The schema emphasizes user-centric discovery, museum navigation, and gamification through achievements. Robust indexing and connection pooling support performance, while explicit validation and integrity checks ensure data quality. The AI agent augments the system by dynamically querying the database to provide contextual assistance.
+The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas for validation, SQLAlchemy models for persistence, and FastAPI for orchestration. The schema emphasizes user-centric discovery, museum navigation, and gamification through achievements. Robust indexing and connection pooling support performance, while explicit validation and integrity checks ensure data quality. The AI agent augments the system by dynamically querying the database to provide contextual assistance. **Updated**: Enhanced security measures now include comprehensive password reset functionality with secure token generation, expiration handling, and protection against email enumeration attacks.
 
 ## Appendices
 
@@ -532,16 +551,43 @@ The MuseAmigo Backend employs a clean separation of concerns: Pydantic schemas f
 ### Security Notes
 - Password Hashing
   - security.py provides hashing and verification utilities; login currently compares plaintext to stored password (placeholder).
+- **Updated**: Password Reset Security
+  - Tokens use cryptographically secure random generation with 256-bit entropy.
+  - Expiration set to 1 hour for time-limited access.
+  - Email enumeration protection: success response regardless of email existence.
+  - Token validation includes existence, format, and expiration checks.
 - Recommendations
   - Replace plaintext comparison with hashed password verification.
   - Enforce stronger password policies and consider rate limiting for login attempts.
+  - **Updated**: Consider implementing rate limiting for password reset requests.
 
 **Section sources**
 - [security.py:1-12](file://security.py#L1-L12)
-- [main.py:569-601](file://main.py#L569-L601)
+- [main.py:525-570](file://main.py#L525-L570)
 
 ### Dependencies Overview
 - Core libraries include FastAPI, SQLAlchemy, Pydantic, PyMySQL, python-dotenv, bcrypt, passlib, and LangChain/LangGraph for AI capabilities.
 
 **Section sources**
 - [requirements.txt:1-59](file://requirements.txt#L1-L59)
+
+### Password Reset Workflow Details
+- **Forgot Password Endpoint** (`/auth/forgot-password`)
+  - Validates email format
+  - Queries user by email (case-sensitive)
+  - Generates secure token using `secrets.token_urlsafe(32)`
+  - Sets expiration to 1 hour using `timedelta(hours=1)`
+  - Stores both token and expiration in database
+  - Returns success message regardless of email existence
+- **Reset Password Endpoint** (`/auth/reset-password`)
+  - Validates token format and new password length
+  - Queries user by reset_token
+  - Parses ISO format expiration timestamp
+  - Compares current UTC time with expiration
+  - Hashes new password using security utilities
+  - Clears reset token fields upon successful reset
+  - Returns success message
+
+**Section sources**
+- [main.py:525-570](file://main.py#L525-L570)
+- [security.py:1-12](file://security.py#L1-L12)
