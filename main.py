@@ -617,6 +617,37 @@ def reset_password(data: schemas.ResetPasswordRequest, db: Session = Depends(get
     
     return {"message": "Password has been reset successfully."}
 
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": db_user.id,
+        "full_name": db_user.full_name,
+        "email": db_user.email,
+    }
+
+@app.patch("/users/{user_id}")
+def update_user(user_id: int, data: schemas.UserUpdate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if data.full_name is not None:
+        data.full_name = data.full_name.strip()
+        if not data.full_name:
+            raise HTTPException(status_code=400, detail="Full name cannot be empty")
+        db_user.full_name = data.full_name
+        db.commit()
+        db.refresh(db_user)
+    
+    return {
+        "id": db_user.id,
+        "full_name": db_user.full_name,
+        "email": db_user.email,
+    }
+
 # 1. Endpoint to load the Map/Discovery screen
 @app.get("/museums", response_model=list[schemas.MuseumResponse])
 def get_all_museums(db: Session = Depends(get_db)):

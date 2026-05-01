@@ -14,6 +14,13 @@
 - [test_output.txt](file://test_output.txt)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Enhanced startup logging documentation with detailed migration and seeding processes
+- Improved error handling documentation for better debugging capabilities
+- Added migration function documentation for database schema updates
+- Updated troubleshooting guide with enhanced error handling patterns
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -76,7 +83,7 @@ G["generate_audio.py<br/>Audio assets generator"] --> A
 - FastAPI application and dependency injection
   - CORS middleware enabled for development
   - Database dependency get_db() yields a scoped Session
-  - Startup event seeds initial data and migrates schema
+  - Startup event seeds initial data and migrates schema with enhanced logging
 - SQLAlchemy models define domain entities and relationships
 - Pydantic schemas define request/response contracts
 - Security helpers for hashing and verifying passwords
@@ -86,7 +93,8 @@ G["generate_audio.py<br/>Audio assets generator"] --> A
 Key patterns:
 - Dependency injection via Depends(get_db()) in route handlers
 - Response models configured with from_attributes for seamless ORM-to-JSON conversion
-- Seed/migration logic runs on startup to ensure schema and baseline data consistency
+- Seed/migration logic runs on startup with detailed logging and graceful error handling
+- Enhanced error handling with try-catch blocks and user-friendly error messages
 
 **Section sources**
 - [main.py:17-23](file://main.py#L17-L23)
@@ -143,7 +151,7 @@ R --> SEC
 ## Detailed Component Analysis
 
 ### FastAPI Routing and Endpoints
-- Authentication: register, login
+- Authentication: register, login, forgot password, reset password
 - Museum discovery: list museums
 - Artifact lookup: by code with flexible matching
 - Collections: add artifact to user collection
@@ -152,7 +160,7 @@ R --> SEC
 - Routes: fetch by museum
 - Achievements: calculate, reset, per-route listing
 - User settings: update theme/language
-- AI chat: Ogima assistant powered by LangGraph
+- AI chat: Ogima assistant powered by LangGraph with enhanced error handling
 
 ```mermaid
 sequenceDiagram
@@ -189,7 +197,7 @@ Client->>API : GET /users/{id}/achievements
 API->>DB : Aggregate scans, compute progress
 API-->>Client : Stats + achievements
 Client->>API : POST /ai/chat
-API->>Agent : Invoke agent_executor
+API->>Agent : agent_executor.invoke(messages)
 Agent->>DB : Tool calls (artifact/museum/exhibitions/routes)
 Agent-->>API : Final reply
 API-->>Client : ChatResponse
@@ -334,7 +342,7 @@ Close --> End(["Return response"])
 ### AI Agent and Tools
 - Agent uses Google Gemini via LangChain and LangGraph
 - Tools: artifact details, museum info, exhibitions, routes
-- Agent executor is created and invoked by the chat endpoint
+- Agent executor is created and invoked by the chat endpoint with enhanced error handling
 
 ```mermaid
 sequenceDiagram
@@ -361,6 +369,39 @@ API-->>Client : ChatResponse
 - [agent.py:17-105](file://agent.py#L17-L105)
 - [main.py:869-897](file://main.py#L869-L897)
 
+### Enhanced Startup Logging and Migration System
+The application now includes comprehensive startup logging and migration capabilities:
+
+- **Migration Functions**: Two dedicated migration functions handle database schema updates:
+  - `migrate_add_audio_asset_column()`: Adds audio_asset column to artifacts table
+  - `migrate_add_user_reset_columns()`: Adds reset_token and reset_token_expires columns to users table
+- **Startup Process**: Enhanced startup event with detailed logging for each operation
+- **Graceful Error Handling**: Try-catch blocks with user-friendly error messages
+- **Schema Migration**: Automatic schema updates during startup to ensure database consistency
+
+```mermaid
+flowchart TD
+Start(["App Startup"]) --> Migrations["Run Migrations"]
+Migrations --> AudioCol["Add audio_asset column"]
+AudioCol --> UserCols["Add reset_token columns"]
+UserCols --> Seeding["Seed Data"]
+Seeding --> Museums["Seed Museums"]
+Museums --> Artifacts["Seed Artifacts"]
+Artifacts --> Exhibitions["Seed Exhibitions"]
+Exhibitions --> Routes["Seed Routes"]
+Routes --> Achievements["Seed Achievements"]
+Achievements --> Cleanup["Cleanup Artifact ID 1"]
+Cleanup --> Complete["Startup Complete"]
+```
+
+**Diagram sources**
+- [main.py:402-452](file://main.py#L402-L452)
+- [main.py:455-487](file://main.py#L455-L487)
+
+**Section sources**
+- [main.py:402-452](file://main.py#L402-L452)
+- [main.py:455-487](file://main.py#L455-L487)
+
 ### Coding Standards and Naming Conventions
 - Module-level imports grouped and ordered logically
 - Handler functions prefixed with domain intent (e.g., get_, post_, put_)
@@ -369,6 +410,7 @@ API-->>Client : ChatResponse
 - Pydantic models use PascalCase
 - Constants and configuration derived from environment variables
 - Clear separation between request DTOs and response DTOs
+- Enhanced error handling with descriptive exception messages
 
 **Section sources**
 - [main.py:1-11](file://main.py#L1-L11)
@@ -379,6 +421,7 @@ API-->>Client : ChatResponse
 - Repository pattern: SQLAlchemy ORM acts as a repository for each entity
 - Factory pattern: get_db() produces database sessions
 - Observer pattern: Achievements computed and persisted when conditions change
+- Migration pattern: Database schema updates handled through dedicated functions
 
 ```mermaid
 classDiagram
@@ -393,18 +436,25 @@ class AchievementEngine {
 +calculate(user_id) Stats
 +reset(user_id, museum_id)
 }
+class MigrationManager {
++migrate_add_audio_asset_column()
++migrate_add_user_reset_columns()
+}
 DatabaseFactory --> UserRepository : "provides Session"
 AchievementEngine --> UserRepository : "reads collections"
+MigrationManager --> DatabaseFactory : "updates schema"
 ```
 
 **Diagram sources**
 - [database.py:32-38](file://database.py#L32-L38)
 - [models.py:4-105](file://models.py#L4-L105)
 - [main.py:738-844](file://main.py#L738-L844)
+- [main.py:402-452](file://main.py#L402-L452)
 
 **Section sources**
 - [database.py:32-38](file://database.py#L32-L38)
 - [main.py:738-844](file://main.py#L738-L844)
+- [main.py:402-452](file://main.py#L402-L452)
 
 ## Dependency Analysis
 External libraries include FastAPI, SQLAlchemy, Pydantic, LangChain/LangGraph, Google Generative AI, passlib/bcrypt, and PyMySQL. The project relies on a MySQL-compatible database and environment-driven configuration.
@@ -431,8 +481,7 @@ SQ --> DB["MySQL (via PyMySQL)"]
 - Minimal ORM overhead: Selective field exposure via Pydantic from_attributes
 - Efficient queries: Exact/partial artifact lookup reduces unnecessary scans
 - AI tool calls: Limit tool scope to essential operations
-
-[No sources needed since this section provides general guidance]
+- Graceful degradation: Startup failures don't prevent application from running
 
 ## Troubleshooting Guide
 Common issues and resolutions:
@@ -446,17 +495,25 @@ Common issues and resolutions:
   - Email uniqueness enforced; handle duplicate registration gracefully
 - Cold start delays
   - Render free tier may sleep; expect slower first request
+- Startup logging issues
+  - Enhanced logging provides detailed migration progress
+  - Migration failures are caught and logged without stopping app startup
+- Error handling improvements
+  - Comprehensive try-catch blocks with user-friendly error messages
+  - AI chat errors return HTTP 500 with detailed error information
+
+**Updated** Enhanced startup logging and improved error handling for better debugging experience
 
 **Section sources**
 - [database.py:12-15](file://database.py#L12-L15)
 - [agent.py:14-15](file://agent.py#L14-L15)
 - [test_output.txt:1-12](file://test_output.txt#L1-L12)
 - [main.py:560-567](file://main.py#L560-L567)
+- [main.py:455-487](file://main.py#L455-L487)
+- [main.py:894-897](file://main.py#L894-L897)
 
 ## Conclusion
-This backend leverages FastAPI, SQLAlchemy, and LangGraph to deliver a cohesive museum experience. Contributors should adhere to established import patterns, dependency injection, schema contracts, and architectural practices. Use the provided testing and debugging guidance to maintain stability and performance as new features are added.
-
-[No sources needed since this section summarizes without analyzing specific files]
+This backend leverages FastAPI, SQLAlchemy, and LangGraph to deliver a cohesive museum experience. Contributors should adhere to established import patterns, dependency injection, schema contracts, and architectural practices. The enhanced startup logging and improved error handling provide better debugging capabilities and development experience. Use the provided testing and debugging guidance to maintain stability and performance as new features are added.
 
 ## Appendices
 
@@ -477,17 +534,20 @@ This backend leverages FastAPI, SQLAlchemy, and LangGraph to deliver a cohesive 
 - For new endpoints, reuse get_db() dependency
 - For AI assistance, add a new tool in agent.py and wire it into the agent executor
 - For audio assets, use generate_audio.py to produce placeholders and update artifact entries
+- For database schema changes, create migration functions similar to existing ones
 
 **Section sources**
 - [database.py:32-38](file://database.py#L32-L38)
 - [agent.py:17-105](file://agent.py#L17-L105)
 - [generate_audio.py:41-78](file://generate_audio.py#L41-L78)
+- [main.py:402-452](file://main.py#L402-L452)
 
 ### Testing Strategy
 - Unit tests: Validate schemas and helper functions (e.g., password hashing)
 - Integration tests: Use FastAPI TestClient to exercise routes with mocked DB sessions
 - API tests: Use Swagger UI to manually validate endpoints and responses
 - CI/CD: Automate tests and linting in the pipeline
+- Startup testing: Verify migration functions execute successfully without errors
 
 **Section sources**
 - [README.md:24-33](file://README.md#L24-L33)
@@ -497,16 +557,23 @@ This backend leverages FastAPI, SQLAlchemy, and LangGraph to deliver a cohesive 
 - Wrap AI tool calls with try/catch to prevent server failures
 - Log exceptions with context and return user-friendly messages
 - Leverage database transaction rollback on failure
+- Monitor startup logs for migration progress and errors
+- Utilize enhanced error messages for better debugging experience
+
+**Updated** Enhanced logging and error handling for improved debugging capabilities
 
 **Section sources**
 - [main.py:560-567](file://main.py#L560-L567)
-- [main.py:895-897](file://main.py#L895-L897)
+- [main.py:894-897](file://main.py#L894-L897)
+- [main.py:455-487](file://main.py#L455-L487)
 
 ### Development Workflow Optimization
 - Keep requirements.txt updated after installing new packages
 - Commit and push changes; Render will auto-deploy
 - Use Swagger UI for quick smoke tests
 - Avoid exposing secrets; keep DATABASE_URL and GOOGLE_API_KEY in .env
+- Monitor startup logs for migration progress
+- Test error handling scenarios with invalid inputs
 
 **Section sources**
 - [README.md:36-48](file://README.md#L36-L48)

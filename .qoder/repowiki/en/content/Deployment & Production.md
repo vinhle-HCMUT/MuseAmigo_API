@@ -4,6 +4,7 @@
 **Referenced Files in This Document**
 - [README.md](file://README.md)
 - [requirements.txt](file://requirements.txt)
+- [Procfile](file://Procfile)
 - [main.py](file://main.py)
 - [database.py](file://database.py)
 - [schemas.py](file://schemas.py)
@@ -12,6 +13,13 @@
 - [agent.py](file://agent.py)
 - [generate_audio.py](file://generate_audio.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Updated Procfile deployment configuration section to document new Uvicorn ASGI server setup
+- Enhanced database connection management documentation with improved timeout handling
+- Added production-ready deployment setup details for Render platform
+- Updated performance considerations to reflect enhanced connection pooling
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -37,7 +45,8 @@ The backend is a FastAPI application with SQLAlchemy ORM, integrated with a MySQ
 - AI agent integration: agent.py
 - Audio generation utilities: generate_audio.py
 - Dependencies: requirements.txt
-- Deployment and usage guidance: README.md
+- Deployment configuration: Procfile
+- Usage guidance: README.md
 
 ```mermaid
 graph TB
@@ -49,6 +58,7 @@ Schemas["schemas.py"]
 Security["security.py"]
 Agent["agent.py"]
 Audio["generate_audio.py"]
+Proc["Procfile"]
 end
 subgraph "External Services"
 MySQL["MySQL-compatible DB<br/>via DATABASE_URL"]
@@ -64,7 +74,8 @@ Main --> Agent
 Agent --> DB
 Agent --> Gemini
 DB --> MySQL
-Main --> Render
+Main --> Proc
+Proc --> Render
 Unity --> Main
 ```
 
@@ -76,10 +87,12 @@ Unity --> Main
 - [security.py](file://security.py)
 - [agent.py](file://agent.py)
 - [generate_audio.py](file://generate_audio.py)
+- [Procfile](file://Procfile)
 
 **Section sources**
 - [README.md](file://README.md)
 - [requirements.txt](file://requirements.txt)
+- [Procfile](file://Procfile)
 - [main.py](file://main.py)
 - [database.py](file://database.py)
 - [models.py](file://models.py)
@@ -90,16 +103,19 @@ Unity --> Main
 
 ## Core Components
 - FastAPI application with CORS middleware and database initialization on startup
-- SQLAlchemy engine with connection pooling and pre-ping/recycle settings
+- SQLAlchemy engine with enhanced connection pooling and timeout handling
 - Environment-driven database URL and optional fallback to local MySQL
 - AI agent powered by Google Gemini with tooling for artifact, museum, exhibition, and route queries
 - Unity integration endpoints for museums, artifacts, collections, tickets, routes, and achievements
 - Password hashing utilities for secure credential handling
+- Production-ready Uvicorn ASGI server configuration via Procfile
 
 Key production-relevant elements:
 - Environment variables: DATABASE_URL, GOOGLE_API_KEY
 - Startup seeding of museums, artifacts, exhibitions, routes, and achievements
 - Endpoint coverage for frontend consumption
+- Enhanced database connection timeout handling (10-second timeout)
+- Production deployment configuration with explicit Uvicorn server setup
 
 **Section sources**
 - [main.py](file://main.py)
@@ -108,9 +124,10 @@ Key production-relevant elements:
 - [schemas.py](file://schemas.py)
 - [security.py](file://security.py)
 - [agent.py](file://agent.py)
+- [Procfile](file://Procfile)
 
 ## Architecture Overview
-The backend runs on Render with Uvicorn as the ASGI server. Requests flow from the Unity client to FastAPI endpoints, which interact with SQLAlchemy ORM to query the MySQL-compatible database. Conversational AI features leverage Google Gemini via an API key stored in environment variables.
+The backend runs on Render with Uvicorn as the ASGI server, configured through the Procfile. Requests flow from the Unity client to FastAPI endpoints, which interact with SQLAlchemy ORM to query the MySQL-compatible database. Conversational AI features leverage Google Gemini via an API key stored in environment variables.
 
 ```mermaid
 sequenceDiagram
@@ -140,12 +157,14 @@ API-->>Unity : ChatResponse
 - [main.py](file://main.py)
 - [database.py](file://database.py)
 - [agent.py](file://agent.py)
+- [Procfile](file://Procfile)
 
 ## Detailed Component Analysis
 
 ### Database Layer
 - Environment-driven URL with fallback to local MySQL
-- Connection pooling configured with pool_size, max_overflow, pool_pre_ping, and pool_recycle
+- Enhanced connection pooling configured with pool_size=10, max_overflow=20, pool_pre_ping=True, and pool_recycle=3600
+- Improved connection timeout handling with 10-second connect timeout
 - Session factory and dependency injection for route handlers
 - Startup migration to add audio_asset column if missing
 
@@ -153,10 +172,13 @@ API-->>Unity : ChatResponse
 flowchart TD
 Start(["Startup"]) --> LoadEnv["Load .env variables"]
 LoadEnv --> BuildURL["Build DATABASE_URL"]
-BuildURL --> CreateEngine["Create SQLAlchemy Engine<br/>with pool settings"]
-CreateEngine --> PrePing["pool_pre_ping enabled"]
-PrePing --> Recycle["pool_recycle set"]
-Recycle --> Ready(["Ready for requests"])
+BuildURL --> CreateEngine["Create SQLAlchemy Engine<br/>with enhanced pool settings"]
+CreateEngine --> PoolSize["pool_size=10"]
+PoolSize --> MaxOverflow["max_overflow=20"]
+MaxOverflow --> PrePing["pool_pre_ping enabled"]
+PrePing --> Recycle["pool_recycle=3600"]
+Recycle --> Timeout["connect_timeout=10s"]
+Timeout --> Ready(["Ready for requests"])
 ```
 
 **Diagram sources**
@@ -335,11 +357,29 @@ Endpoints commonly consumed by the Unity client include:
 - POST /auth/register
 - POST /auth/login
 
-These endpoints align with the Unity integration pattern described in the repository’s README.
+These endpoints align with the Unity integration pattern described in the repository's README.
 
 **Section sources**
 - [main.py](file://main.py)
 - [README.md](file://README.md)
+
+### Production Deployment Configuration
+**Updated** The application now uses a production-ready deployment configuration through the Procfile, which explicitly defines the Uvicorn ASGI server setup for Render platform deployment.
+
+The Procfile configuration:
+```
+web: uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+This configuration provides:
+- Explicit Uvicorn ASGI server specification
+- Host binding to 0.0.0.0 for external accessibility
+- Dynamic port configuration via PORT environment variable
+- Graceful fallback to port 8000 if PORT is not set
+
+**Section sources**
+- [Procfile](file://Procfile)
+- [main.py](file://main.py)
 
 ## Dependency Analysis
 Runtime dependencies include FastAPI, Uvicorn, SQLAlchemy, PyMySQL, Pydantic, LangChain, and Google Generative AI. The application relies on environment variables for database connectivity and AI API access.
@@ -351,7 +391,8 @@ FastAPI --> Pydantic["Pydantic"]
 FastAPI --> Uvicorn["Uvicorn"]
 SQLA --> PyMySQL["PyMySQL"]
 Agent["LangChain Agent"] --> Gemini["Google Generative AI"]
-Agent --> SQLA
+Proc["Procfile"] --> Uvicorn
+Uvicorn --> FastAPI
 ```
 
 **Diagram sources**
@@ -359,19 +400,23 @@ Agent --> SQLA
 - [main.py](file://main.py)
 - [agent.py](file://agent.py)
 - [database.py](file://database.py)
+- [Procfile](file://Procfile)
 
 **Section sources**
 - [requirements.txt](file://requirements.txt)
 - [main.py](file://main.py)
 - [agent.py](file://agent.py)
 - [database.py](file://database.py)
+- [Procfile](file://Procfile)
 
 ## Performance Considerations
 - Cold start handling for free-tier hosting:
   - Expect initial request latency after idle periods on Render Free tier.
   - Plan for first-run delays and cache warm-up strategies.
+  - The enhanced database connection pooling helps reduce cold start impact.
 - Connection pooling optimization:
-  - Connection pool size and overflow are configured in the database engine.
+  - Connection pool configured with pool_size=10, max_overflow=20, pool_pre_ping=True, and pool_recycle=3600.
+  - Improved connection timeout handling with 10-second connect timeout reduces hanging connections.
   - Enable pre-ping to validate connections and recycle periodically to avoid stale connections.
 - Memory management:
   - Ensure database sessions are closed in all code paths (context managers or try/finally).
@@ -383,14 +428,16 @@ Agent --> SQLA
 - Endpoint-level optimizations:
   - Add response caching for read-heavy endpoints where safe.
   - Use database indexes on frequently filtered columns (e.g., artifact_code, user_id).
-
-[No sources needed since this section provides general guidance]
+- Production deployment performance:
+  - Uvicorn ASGI server provides efficient async request handling.
+  - Dynamic port configuration ensures compatibility with Render's container environment.
 
 ## Troubleshooting Guide
 Common production issues and resolutions:
 - Database connectivity failures:
   - Verify DATABASE_URL environment variable is set on Render.
   - Confirm network access to the cloud database endpoint.
+  - Check connection timeout settings if experiencing connection delays.
 - Missing GOOGLE_API_KEY:
   - Ensure GOOGLE_API_KEY is present in environment variables for AI features.
 - CORS errors in production:
@@ -399,41 +446,51 @@ Common production issues and resolutions:
   - Handle duplicate emails gracefully and return user-friendly messages.
 - Slow initial requests:
   - Accept cold start delays on free tier; consider keep-alive or scheduled pings.
+  - The enhanced connection pooling helps mitigate cold start impact.
 - Session leaks:
   - Ensure get_db() is used as a dependency and sessions are closed in all branches.
+- Uvicorn deployment issues:
+  - Verify Procfile syntax and Uvicorn installation in requirements.txt.
+  - Check that the main module exports an 'app' instance named 'main:app'.
+- Port binding errors:
+  - Ensure the application binds to 0.0.0.0 as specified in the Procfile.
+  - Verify PORT environment variable is properly set by Render.
 
 **Section sources**
 - [database.py](file://database.py)
 - [agent.py](file://agent.py)
 - [main.py](file://main.py)
+- [Procfile](file://Procfile)
 
 ## Conclusion
-This document outlined production deployment of the MuseAmigo Backend on Render, environment configuration, database and API key management, CI/CD workflow, Unity integration, performance tuning, monitoring/logging, error handling, maintenance, scaling, backups, and disaster recovery. Adhering to these practices will help maintain a reliable, scalable, and observable backend for the Unity client.
-
-[No sources needed since this section summarizes without analyzing specific files]
+This document outlined production deployment of the MuseAmigo Backend on Render, environment configuration, database and API key management, CI/CD workflow, Unity integration, performance tuning, monitoring/logging, error handling, maintenance, scaling, backups, and disaster recovery. The enhanced deployment configuration with Uvicorn ASGI server and improved database connection management provides a robust foundation for production operation. Adhering to these practices will help maintain a reliable, scalable, and observable backend for the Unity client.
 
 ## Appendices
 
 ### A. Production Deployment on Render
-- Platform: Render with Uvicorn + ASGI
+- Platform: Render with Uvicorn + ASGI via Procfile
 - Environment variables to configure:
   - DATABASE_URL: Cloud database connection string
   - GOOGLE_API_KEY: Google Gemini API key
-- Build command and start command are inferred from the runtime; ensure requirements.txt is accurate.
+- Build command and start command are inferred from the Procfile configuration.
 - Swagger UI endpoint for testing is exposed at the Render domain.
+- Uvicorn ASGI server configuration provides production-ready request handling.
 
 **Section sources**
 - [README.md](file://README.md)
 - [database.py](file://database.py)
 - [agent.py](file://agent.py)
+- [Procfile](file://Procfile)
 
 ### B. CI/CD Workflow via GitHub Integration
 - Commit and push changes to the main branch.
 - Render will trigger a build and deploy the latest commit automatically.
 - Typical build time is a few minutes.
+- The Procfile ensures consistent deployment across environments.
 
 **Section sources**
 - [README.md](file://README.md)
+- [Procfile](file://Procfile)
 
 ### C. Frontend Integration with Unity C#
 - Base URL for production: https://museamigo-backend.onrender.com
@@ -459,18 +516,30 @@ This document outlined production deployment of the MuseAmigo Backend on Render,
 - Centralize logs on Render or a log aggregation service.
 - Monitor uptime, response times, error rates, and cold start durations.
 - Set up alerts for sustained high error rates or slow response times.
-
-[No sources needed since this section provides general guidance]
+- Monitor database connection pool utilization and timeouts.
+- Track Uvicorn server performance metrics.
 
 ### E. Scaling, Backups, and Disaster Recovery
 - Scaling:
   - Horizontal scaling with multiple instances behind a load balancer.
   - Stateless design to enable easy scaling.
+  - Uvicorn ASGI server handles concurrent connections efficiently.
 - Backups:
   - Schedule regular logical backups of the MySQL-compatible database.
   - Store backups securely and test restore procedures periodically.
 - Disaster recovery:
   - Maintain a documented RTO/RPO.
   - Automate restoration steps and validate them regularly.
+  - Consider database connection pool health monitoring for failover scenarios.
 
-[No sources needed since this section provides general guidance]
+### F. Enhanced Database Connection Management
+**Updated** The database connection management has been enhanced with improved timeout handling and connection pooling:
+
+- **Connection Timeout**: 10-second timeout prevents hanging connections
+- **Connection Pool**: pool_size=10, max_overflow=20 for optimal concurrency
+- **Connection Validation**: pool_pre_ping=True ensures healthy connections
+- **Connection Recycling**: pool_recycle=3600 prevents stale connection accumulation
+- **Graceful Degradation**: Fallback to localhost MySQL if DATABASE_URL is not set
+
+**Section sources**
+- [database.py](file://database.py)

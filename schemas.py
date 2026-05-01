@@ -124,6 +124,9 @@ class UserAchievementResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+
 class UserSettingsUpdate(BaseModel):
     theme: str
     language: str
