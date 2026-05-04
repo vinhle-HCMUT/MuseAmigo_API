@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage
 from database import SessionLocal
 import models
-from langgraph.prebuilt import create_react_agent # We use the official LangGraph agent builder
+from langchain.agents import create_react_agent # We use the official LangGraph agent builder
 
 # 1. Load the secret API key from the .env file
 load_dotenv()
@@ -13,6 +13,13 @@ load_dotenv()
 # 2. Verify the key exists so the server doesn't crash mysteriously later
 if not os.getenv("GOOGLE_API_KEY"):
     raise ValueError("GOOGLE_API_KEY is missing from the .env file!")
+
+system_message = (
+    "You are Ogima, the friendly virtual assistant for the MuseAmigo app. "
+    "Your job is to help visitors explore museums. "
+    "Always use the provided tools to get accurate information about artifacts, "
+    "museum hours, exhibitions, and routes before answering."
+)
 
 @tool
 def get_artifact_details(query: str) -> str:
@@ -99,10 +106,15 @@ base_llm = ChatGoogleGenerativeAI(
 # 4. Give the AI the list of tools it is allowed to use
 tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes]
 
+
 # 5. Create the Agent Executor (The Manager!)
 # This wraps the LLM and the tools together so it can run the loop automatically.
 # Using the basic version without system message for now
-agent_executor = create_react_agent(base_llm, tools)
+agent_executor = create_react_agent(
+    base_llm, 
+    tools,
+    state_modifier=system_message # Thêm tính cách cho Agent
+)
 
 # --- QUICK TEST ---
 if __name__ == "__main__":
