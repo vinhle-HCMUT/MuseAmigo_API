@@ -13,6 +13,8 @@ class UserResponse(BaseModel):
     email: str
     theme: str       
     language: str    
+    font_size: str
+    scheme: str
     class Config:
         from_attributes = True # This tells Pydantic it's okay to read data from a SQLAlchemy model
 
@@ -130,6 +132,8 @@ class UserUpdate(BaseModel):
 class UserSettingsUpdate(BaseModel):
     theme: str
     language: str
+    font_size: str
+    scheme: str
 
 class ForgotPasswordRequest(BaseModel):
     email: str
