@@ -90,6 +90,40 @@ def get_routes(museum_name: str) -> str:
     finally:
         db.close()
 
+@tool
+def update_user_settings(user_id: int, theme: str = None, language: str = None, font_size: str = None, scheme: str = None) -> str:
+    """Updates the user settings for the given user_id. You can update one or more of theme, language, font_size, and scheme."""
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            return f"User with ID {user_id} not found."
+        
+        updated_fields = []
+        if theme is not None:
+            user.theme = theme
+            updated_fields.append("theme")
+        if language is not None:
+            user.language = language
+            updated_fields.append("language")
+        if font_size is not None:
+            user.font_size = font_size
+            updated_fields.append("font_size")
+        if scheme is not None:
+            user.scheme = scheme
+            updated_fields.append("scheme")
+            
+        if not updated_fields:
+            return "No valid settings provided to update."
+            
+        db.commit()
+        return f"Successfully updated settings: {', '.join(updated_fields)} for user {user_id}."
+    except Exception as e:
+        db.rollback()
+        return f"An error occurred while updating settings: {e}"
+    finally:
+        db.close()
+
 # 3. Initialize the Gemini brain
 base_llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -97,7 +131,7 @@ base_llm = ChatGoogleGenerativeAI(
 )
 
 # 4. Give the AI the list of tools it is allowed to use
-tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes]
+tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes, update_user_settings]
 
 # 5. Create the Agent Executor (The Manager!)
 # This wraps the LLM and the tools together so it can run the loop automatically.
