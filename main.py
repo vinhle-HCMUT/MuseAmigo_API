@@ -741,6 +741,24 @@ def purchase_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db))
     
     return new_ticket
 
+@app.get("/users/{user_id}/tickets")
+def get_user_tickets(user_id: int, db: Session = Depends(get_db)):
+    tickets = db.query(models.Ticket).filter(models.Ticket.user_id == user_id).all()
+    result = []
+    for t in tickets:
+        museum = db.query(models.Museum).filter(models.Museum.id == t.museum_id).first()
+        result.append({
+            "id": t.id,
+            "ticket_type": t.ticket_type,
+            "purchase_date": t.purchase_date,
+            "qr_code": t.qr_code,
+            "is_used": t.is_used,
+            "user_id": t.user_id,
+            "museum_id": t.museum_id,
+            "museum_name": museum.name if museum else "Unknown Museum",
+        })
+    return result
+
 # --- PHASE 3: Fetch Navigation Routes ---
 @app.get("/museums/{museum_id}/routes", response_model=list[schemas.RouteResponse])
 def get_routes(museum_id: int, db: Session = Depends(get_db)):
