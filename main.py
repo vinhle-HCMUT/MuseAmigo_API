@@ -452,6 +452,38 @@ def migrate_add_user_reset_columns():
         db.close()
 
 
+def migrate_add_user_settings_columns():
+    """Add font_size and scheme columns to users table if they don't exist"""
+    db = next(get_db())
+    try:
+        db.execute(text("""
+            ALTER TABLE users ADD COLUMN font_size VARCHAR(20) DEFAULT 'Medium'
+        """))
+        db.commit()
+        print("✓ Added font_size column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ font_size column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+
+    try:
+        db.execute(text("""
+            ALTER TABLE users ADD COLUMN scheme VARCHAR(20) DEFAULT '0xFFCC353A'
+        """))
+        db.commit()
+        print("✓ Added scheme column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ scheme column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup_seed_data():
     try:
@@ -460,6 +492,8 @@ def startup_seed_data():
         migrate_add_audio_asset_column()
         print("Running migration: user reset columns...")
         migrate_add_user_reset_columns()
+        print("Running migration: user settings columns...")
+        migrate_add_user_settings_columns()
         
         print("Opening DB session for seeding...")
         db = next(get_db())
@@ -567,7 +601,11 @@ def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db
     return {
         "message": "Login successful!", 
         "user_id": db_user.id, 
-        "full_name": db_user.full_name
+        "full_name": db_user.full_name,
+        "theme": db_user.theme,
+        "language": db_user.language,
+        "font_size": db_user.font_size,
+        "scheme": db_user.scheme
     }
 
 @app.post("/auth/forgot-password")
@@ -626,6 +664,10 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "id": db_user.id,
         "full_name": db_user.full_name,
         "email": db_user.email,
+        "theme": db_user.theme,
+        "language": db_user.language,
+        "font_size": db_user.font_size,
+        "scheme": db_user.scheme
     }
 
 @app.patch("/users/{user_id}")
@@ -907,6 +949,8 @@ def update_user_settings(user_id: int, settings: schemas.UserSettingsUpdate, db:
     # 3. Update their preferences
     db_user.theme = settings.theme
     db_user.language = settings.language
+    db_user.font_size = settings.font_size
+    db_user.scheme = settings.scheme
     
     # 4. Save the changes to MySQL
     db.commit()
