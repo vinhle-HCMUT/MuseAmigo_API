@@ -76,6 +76,17 @@ class Ticket(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     museum_id = Column(Integer, ForeignKey("museums.id"))
 
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    museum_id = Column(Integer, ForeignKey("museums.id"))
+    ticket_type = Column(String(50))
+    amount = Column(Integer)
+    status = Column(String(20), default="PENDING") # PENDING, PAID
+    created_at = Column(String(50))
+
 class Route(Base):
     __tablename__ = "routes"
 
