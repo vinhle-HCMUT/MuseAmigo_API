@@ -483,6 +483,31 @@ def migrate_add_user_settings_columns():
     finally:
         db.close()
 
+def migrate_create_orders_table():
+    """Create orders table if it doesn't exist"""
+    db = next(get_db())
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                museum_id INTEGER,
+                ticket_type VARCHAR(50),
+                amount INTEGER,
+                status VARCHAR(20) DEFAULT 'PENDING',
+                created_at VARCHAR(50),
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(museum_id) REFERENCES museums(id)
+            )
+        """))
+        db.commit()
+        print("✓ Created orders table if not exists")
+    except Exception as e:
+        print(f"⚠ Migration note for orders table: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 
 @app.on_event("startup")
 def startup_seed_data():
@@ -494,6 +519,8 @@ def startup_seed_data():
         migrate_add_user_reset_columns()
         print("Running migration: user settings columns...")
         migrate_add_user_settings_columns()
+        print("Running migration: orders table...")
+        migrate_create_orders_table()
         
         print("Opening DB session for seeding...")
         db = next(get_db())
@@ -782,6 +809,96 @@ def purchase_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db))
     db.refresh(new_ticket)
     
     return new_ticket
+
+# --- NEW PAYMENT FLOW SIMULATION ---
+
+@app.post("/payments/create", response_model=schemas.OrderResponse)
+def create_payment(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):
+    # Calculate amount based on ticket type
+    # Base price could be fetched from museum, but for simplicity:
+    base_price = 30000
+    if ticket.ticket_type == "Student":
+        amount = int(base_price * 0.7)
+    elif ticket.ticket_type == "Children":
+        amount = int(base_price * 0.5)
+    elif ticket.ticket_type == "Preview":
+        amount = 5000
+    else:
+        amount = base_price
+
+    today_date = str(date.today())
+
+    # Create Order
+    new_order = models.Order(
+        user_id=ticket.user_id,
+        museum_id=ticket.museum_id,
+        ticket_type=ticket.ticket_type,
+        amount=amount,
+        status="PENDING",
+        created_at=today_date
+    )
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+
+    # Generate VietQR URL (Mock details for Demo)
+    # format: https://img.vietqr.io/image/<BIN>-<RECEIVER_NUMBER>-<TEMPLATE>.png?amount=<AMOUNT>&addInfo=<DESCRIPTION>&accountName=<ACCOUNT_NAME>
+    bank_bin = "970436"  # Vietcombank BIN for demo
+    account_no = "1122334455"
+    description = f"PAY ORDER {new_order.id}"
+    qr_url = f"https://img.vietqr.io/image/{bank_bin}-{account_no}-compact2.png?amount={amount}&addInfo={description}&accountName=MUSEAMIGO"
+
+    return {"order_id": new_order.id, "status": new_order.status, "qr_url": qr_url}
+
+@app.get("/payments/{order_id}/status", response_model=schemas.PaymentStatusResponse)
+def check_payment_status(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    response = {"status": order.status, "ticket": None}
+    
+    if order.status == "PAID":
+        # Find the ticket created for this order. 
+        # For simplicity, we find the most recent ticket for this user and museum created today.
+        ticket = db.query(models.Ticket).filter(
+            models.Ticket.user_id == order.user_id,
+            models.Ticket.museum_id == order.museum_id,
+            models.Ticket.ticket_type == order.ticket_type
+        ).order_by(models.Ticket.id.desc()).first()
+        
+        response["ticket"] = ticket
+        
+    return response
+
+@app.post("/payments/{order_id}/webhook")
+def simulate_payment_webhook(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.status == "PAID":
+        return {"message": "Order already paid"}
+        
+    # Mark as PAID
+    order.status = "PAID"
+    
+    # Generate the ticket
+    random_string = uuid.uuid4().hex[:8].upper()
+    unique_qr = f"MUSEUM-{order.museum_id}-USER-{order.user_id}-{random_string}"
+    
+    new_ticket = models.Ticket(
+        ticket_type=order.ticket_type,
+        purchase_date=order.created_at,
+        qr_code=unique_qr,
+        user_id=order.user_id,
+        museum_id=order.museum_id
+    )
+    
+    db.add(new_ticket)
+    db.commit()
+    
+    return {"message": "Webhook processed, order paid, ticket generated"}
 
 @app.get("/users/{user_id}/tickets")
 def get_user_tickets(user_id: int, db: Session = Depends(get_db)):

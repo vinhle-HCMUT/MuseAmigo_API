@@ -93,6 +93,15 @@ class TicketResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class OrderResponse(BaseModel):
+    order_id: int
+    status: str
+    qr_url: str
+
+class PaymentStatusResponse(BaseModel):
+    status: str
+    ticket: TicketResponse | None = None
+
 class RouteResponse(BaseModel):
     id: int
     name: str
