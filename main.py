@@ -756,6 +756,11 @@ def get_exhibitions(museum_id: int, db: Session = Depends(get_db)):
     exhibitions = db.query(models.Exhibition).filter(models.Exhibition.museum_id == museum_id).all()
     return exhibitions
 
+@app.get("/museums/{museum_id}/artifacts", response_model=list[schemas.ArtifactResponse])
+def get_museum_artifacts(museum_id: int, db: Session = Depends(get_db)):
+    artifacts = db.query(models.Artifact).filter(models.Artifact.museum_id == museum_id).all()
+    return artifacts
+
 # 2. Purchase a Ticket and generate a QR Code
 @app.post("/tickets/purchase", response_model=schemas.TicketResponse)
 def purchase_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):
