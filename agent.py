@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage
 from database import SessionLocal
 import models
-from langchain.agents import create_react_agent # We use the official LangGraph agent builder
+from langgraph.prebuilt import create_react_agent # We use the official LangGraph agent builder
 
 # 1. Load the secret API key from the .env file
 load_dotenv()
