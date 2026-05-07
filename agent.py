@@ -147,7 +147,7 @@ tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes, upd
 agent_executor = create_react_agent(
     base_llm, 
     tools,
-    state_modifier=system_message # Thêm tính cách cho Agent
+    prompt=system_message # Thêm tính cách cho Agent
 )
 
 # --- QUICK TEST ---
