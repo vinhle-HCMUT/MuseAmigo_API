@@ -1,14 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+import os
+from pathlib import Path
+import uuid # Dùng uuid để tên file không bao giờ bị trùng
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 import json
+from generate_audio import audio_to_text, text_to_audio
 import models, schemas
 from database import engine, get_db
-import uuid
 from datetime import date, datetime, timedelta
 import secrets
-from agent import agent_executor, system_message as ogima_system_message
+from agent import agent_executor, get_ogima_response, system_message as ogima_system_message
 from sqlalchemy.exc import IntegrityError
 
 # Creates the tables
@@ -23,6 +27,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Lấy đường dẫn thư mục hiện tại của source code
+BASE_DIR = Path(__file__).parent
+TEMP_DIR = BASE_DIR / "temp"
+
+# Tạo thư mục temp nếu chưa có
+TEMP_DIR.mkdir(exist_ok=True)
 
 
 def seed_museums(db: Session) -> None:
@@ -78,7 +90,7 @@ def seed_artifacts(db: Session) -> None:
     seed_data = [
         # Independence Palace Artifacts
         {
-            "artifact_code": "IP-002", 
+            "artifact_code": "IP-002",
             "title": "T-54 Tank",
             "year": "1975",
             "description": "The famous T-54 tank that crashed through the gates of Independence Palace on April 30, 1975, symbolizing the end of the Vietnam War. This tank became an iconic symbol of reunification.",
@@ -406,7 +418,7 @@ def migrate_add_audio_asset_column():
     try:
         # Try to add the column - will fail silently if it already exists
         db.execute(text("""
-            ALTER TABLE artifacts ADD COLUMN audio_asset VARCHAR(200) DEFAULT '' 
+            ALTER TABLE artifacts ADD COLUMN audio_asset VARCHAR(200) DEFAULT ''
         """))
         db.commit()
         print("✓ Added audio_asset column to artifacts table")
@@ -522,7 +534,7 @@ def startup_seed_data():
         migrate_add_user_settings_columns()
         print("Running migration: orders table...")
         migrate_create_orders_table()
-        
+
         print("Opening DB session for seeding...")
         db = next(get_db())
         try:
@@ -569,7 +581,7 @@ def get_museum_info():
 # --- NEW: Registration Endpoint ---
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    
+
     # Validation: Check if username and password are provided
     if not user.full_name or not user.full_name.strip():
         raise HTTPException(status_code=400, detail="Username is required")
@@ -577,7 +589,7 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Password is required")
     if len(user.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    
+
     # 1. Package the data into our Database Model
     # (Note: For this test, we are saving the password as plain text. We will secure this later!)
     # 1. Tạo model (giữ nguyên)
@@ -600,35 +612,35 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return db_user
 @app.post("/auth/login")
 def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
-    
+
     # Validation: Check if email and password are provided
     if not user_credentials.email or not user_credentials.email.strip():
         raise HTTPException(status_code=400, detail="Email is required")
     if not user_credentials.password or not user_credentials.password.strip():
         raise HTTPException(status_code=400, detail="Password is required")
-    
+
     # 1. Search the database for a user with this email
     db_user = db.query(models.User).filter(models.User.email == user_credentials.email.strip()).first()
-    
+
     # 2. Check if the user exists AND if the plain text password matches
     # (Note: We are still using the column name 'hashed_password' from earlier, but it holds plain text right now)
     if not db_user or db_user.hashed_password != user_credentials.password:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,  
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid credentials"
         )
-    
+
     # 3. Check if user has required fields (cleanup for existing users with no username/password)
     if not db_user.full_name or not db_user.full_name.strip():
         raise HTTPException(
-            status_code=400,  
+            status_code=400,
             detail="Your account is incomplete. Please contact support."
         )
-        
+
     # 4. If everything matches, login is successful!
     return {
-        "message": "Login successful!", 
-        "user_id": db_user.id, 
+        "message": "Login successful!",
+        "user_id": db_user.id,
         "full_name": db_user.full_name,
         "theme": db_user.theme,
         "language": db_user.language,
@@ -642,13 +654,13 @@ def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(g
     if not db_user:
         # Return success even if email not found to prevent email enumeration
         return {"message": "If the email exists, a reset token has been generated."}
-    
+
     token = secrets.token_urlsafe(32)
     expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
     db_user.reset_token = token
     db_user.reset_token_expires = expires
     db.commit()
-    
+
     # In production, send email here. For demo, return token in response.
     return {
         "message": "Password reset token generated.",
@@ -661,26 +673,26 @@ def reset_password(data: schemas.ResetPasswordRequest, db: Session = Depends(get
     db_user = db.query(models.User).filter(models.User.reset_token == data.token.strip()).first()
     if not db_user:
         raise HTTPException(status_code=400, detail="Invalid or expired token.")
-    
+
     if not db_user.reset_token_expires:
         raise HTTPException(status_code=400, detail="Invalid or expired token.")
-    
+
     try:
         expires = datetime.fromisoformat(db_user.reset_token_expires)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid or expired token.")
-    
+
     if datetime.utcnow() > expires:
         raise HTTPException(status_code=400, detail="Token has expired.")
-    
+
     if not data.new_password or len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-    
+
     db_user.hashed_password = data.new_password
     db_user.reset_token = None
     db_user.reset_token_expires = None
     db.commit()
-    
+
     return {"message": "Password has been reset successfully."}
 
 @app.get("/users/{user_id}")
@@ -703,7 +715,7 @@ def update_user(user_id: int, data: schemas.UserUpdate, db: Session = Depends(ge
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     if data.full_name is not None:
         data.full_name = data.full_name.strip()
         if not data.full_name:
@@ -711,7 +723,7 @@ def update_user(user_id: int, data: schemas.UserUpdate, db: Session = Depends(ge
         db_user.full_name = data.full_name
         db.commit()
         db.refresh(db_user)
-    
+
     return {
         "id": db_user.id,
         "full_name": db_user.full_name,
@@ -729,7 +741,7 @@ def get_all_museums(db: Session = Depends(get_db)):
 def get_artifact(artifact_code: str, db: Session = Depends(get_db)):
     # Trim whitespace and make case-insensitive search
     clean_code = artifact_code.strip().upper()
-    
+
     # First try exact match (case-insensitive via UPPER)
     artifact = db.query(models.Artifact).filter(
         func.upper(models.Artifact.artifact_code) == clean_code
@@ -740,42 +752,42 @@ def get_artifact(artifact_code: str, db: Session = Depends(get_db)):
         artifact = db.query(models.Artifact).filter(
             func.upper(func.replace(models.Artifact.artifact_code, ' ', '')) == clean_code.replace(' ', '')
         ).first()
-    
+
     if not artifact:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Artifact code '{artifact_code}' not found. Available codes: IP-002, IP-003, WRM-001, WRM-002, FAM-001, FAM-002, HCM-001, HCM-002"
         )
-        
+
     return artifact
 
 @app.post("/collections", response_model=schemas.CollectionResponse)
 def add_to_collection(collection: schemas.CollectionCreate, db: Session = Depends(get_db)):
-    
+
     # 1. Check if the user has already collected this artifact
     existing_item = db.query(models.Collection).filter(
         models.Collection.user_id == collection.user_id,
         models.Collection.artifact_id == collection.artifact_id
     ).first()
-    
+
     # 2. If it already exists, throw an error to prevent duplicates
     if existing_item:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Artifact already unlocked in your collection!"
         )
-        
+
     # 3. If it's new, package the data into the Database Model
     new_collection_item = models.Collection(
-        user_id=collection.user_id, 
+        user_id=collection.user_id,
         artifact_id=collection.artifact_id
     )
-    
+
     # 4. Save to MySQL
     db.add(new_collection_item)
     db.commit()
     db.refresh(new_collection_item)
-    
+
     return new_collection_item
 
 # 1. Fetch Exhibitions for a specific museum (for the Home Screen)
@@ -792,12 +804,12 @@ def get_museum_artifacts(museum_id: int, db: Session = Depends(get_db)):
 # 2. Purchase a Ticket and generate a QR Code
 @app.post("/tickets/purchase", response_model=schemas.TicketResponse)
 def purchase_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):
-    
+
     # Generate a unique, random string for the QR code
     # Example output: "MUSEUM-1-USER-1-A8F3B92C"
     random_string = uuid.uuid4().hex[:8].upper()
     unique_qr = f"MUSEUM-{ticket.museum_id}-USER-{ticket.user_id}-{random_string}"
-    
+
     # Get today's date
     today_date = str(date.today())
 
@@ -809,11 +821,11 @@ def purchase_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db))
         user_id=ticket.user_id,
         museum_id=ticket.museum_id
     )
-    
+
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
-    
+
     return new_ticket
 
 # --- NEW PAYMENT FLOW SIMULATION ---
@@ -861,20 +873,20 @@ def check_payment_status(order_id: int, db: Session = Depends(get_db)):
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     response = {"status": order.status, "ticket": None}
-    
+
     if order.status == "PAID":
-        # Find the ticket created for this order. 
+        # Find the ticket created for this order.
         # For simplicity, we find the most recent ticket for this user and museum created today.
         ticket = db.query(models.Ticket).filter(
             models.Ticket.user_id == order.user_id,
             models.Ticket.museum_id == order.museum_id,
             models.Ticket.ticket_type == order.ticket_type
         ).order_by(models.Ticket.id.desc()).first()
-        
+
         response["ticket"] = ticket
-        
+
     return response
 
 @app.post("/payments/{order_id}/webhook")
@@ -882,17 +894,17 @@ def simulate_payment_webhook(order_id: int, db: Session = Depends(get_db)):
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     if order.status == "PAID":
         return {"message": "Order already paid"}
-        
+
     # Mark as PAID
     order.status = "PAID"
-    
+
     # Generate the ticket
     random_string = uuid.uuid4().hex[:8].upper()
     unique_qr = f"MUSEUM-{order.museum_id}-USER-{order.user_id}-{random_string}"
-    
+
     new_ticket = models.Ticket(
         ticket_type=order.ticket_type,
         purchase_date=order.created_at,
@@ -900,10 +912,10 @@ def simulate_payment_webhook(order_id: int, db: Session = Depends(get_db)):
         user_id=order.user_id,
         museum_id=order.museum_id
     )
-    
+
     db.add(new_ticket)
     db.commit()
-    
+
     return {"message": "Webhook processed, order paid, ticket generated"}
 
 @app.get("/users/{user_id}/tickets")
@@ -959,9 +971,9 @@ def reset_museum_achievements(user_id: int, museum_id: int, db: Session = Depend
         models.UserAchievement.user_id == user_id,
         models.UserAchievement.museum_id == museum_id
     ).delete()
-    
+
     db.commit()
-    
+
     return {"message": f"Achievements reset for museum {museum_id}"}
 
 # --- PHASE 4: Calculate User Achievements ---
@@ -1058,27 +1070,27 @@ def get_user_achievements(user_id: int, museum_id: int = Query(..., description=
 
 @app.put("/users/{user_id}/settings", response_model=schemas.UserResponse)
 def update_user_settings(user_id: int, settings: schemas.UserSettingsUpdate, db: Session = Depends(get_db)):
-    
+
     # 1. Find the user in the database
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
-    
+
     # 2. If they don't exist, throw an error
     if not db_user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-        
+
     # 3. Update their preferences
     db_user.theme = settings.theme
     db_user.language = settings.language
     db_user.font_size = settings.font_size
     db_user.scheme = settings.scheme
-    
+
     # 4. Save the changes to MySQL
     db.commit()
     db.refresh(db_user)
-    
+
     return db_user
 
 # --- PHASE 5: Ogima AI Chat Assistant ---
@@ -1098,11 +1110,11 @@ def chat_with_ogima(chat_request: schemas.ChatRequest):
         ("system", ogima_system_message),
         ("user", chat_request.message)
     ]}
-    
+
     try:
         # 2. Run the AI loop (Think -> Search DB -> Generate Answer)
         final_state = agent_executor.invoke(user_input)
-        
+
         # 3. Extract the final text reply
         ai_reply = final_state["messages"][-1].content
         raw_content = ai_reply if isinstance(ai_reply, str) else json.dumps(ai_reply)
@@ -1120,14 +1132,57 @@ def chat_with_ogima(chat_request: schemas.ChatRequest):
             return {"reply": reply_text, "action": action}
         except Exception:
             return {"reply": raw_content, "action": None}
-        
+
     except Exception as e:
-        # If the AI or Google's server crashes, we catch it so the app doesn't break
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/chat/audio")
+async def chat_with_ogima_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
+    # Tạo tên file duy nhất bằng UUID để tránh xung đột khi nhiều người dùng cùng lúc
+    unique_id = str(uuid.uuid4())
+    temp_input_path = TEMP_DIR / f"input_{unique_id}.wav"
+    temp_output_path = TEMP_DIR / f"output_{unique_id}.wav"
+
+    # Đăng ký xóa file sau khi phản hồi xong (dùng str() vì os.remove cần string path)
+    background_tasks.add_task(os.remove, str(temp_input_path))
+    background_tasks.add_task(os.remove, str(temp_output_path))
+
+    try:
+        # 1. Lưu audio vào folder ./temp/
+        audio_bytes = await file.read()
+        with open(temp_input_path, "wb") as f:
+            f.write(audio_bytes)
+
+        # 2. Audio -> Text (STT) - Truyền string path vào hàm
+        user_message_text = await audio_to_text(str(temp_input_path))
+
+        # 3. Logic AI
+        ai_reply_text = get_ogima_response(user_message_text)
+
+        # 4. Text -> Audio (TTS) - Lưu vào folder ./temp/
+        await text_to_audio(
+            text=ai_reply_text,
+            output_file=str(temp_output_path),
+            voice_name="Aoede"
+        )
+
+        # 5. Trả về file audio
+        return FileResponse(
+            path=str(temp_output_path),
+            media_type="audio/wav",
+            filename="response.wav"
+        )
+
+    except Exception as e:
+        print(f"Lỗi API: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
-    import os
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

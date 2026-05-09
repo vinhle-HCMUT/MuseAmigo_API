@@ -1,77 +1,128 @@
 #!/usr/bin/env python3
 """
 Simple audio file generator for MuseAmigo project.
-Creates two sample WAV audio files for artifact descriptions.
+Uses Gemini 2.5 Flash REST API for BOTH STT and TTS natively.
 """
 
-import wave
-import struct
-import math
 import os
+import asyncio
+import wave
+from dotenv import load_dotenv
 
-def generate_sine_wave_audio(filename, duration=3, frequency=440, sample_rate=44100):
+from google import genai
+from google.genai import types
+
+load_dotenv()
+
+# Initialize standard Gemini Client
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+# Use the standard 2.5 Flash model for both reading and speaking
+MODEL = "gemini-2.5-flash"
+
+
+# =========================
+# WAV -> TEXT (STT)
+# =========================
+async def audio_to_text(file_path: str) -> str:
     """
-    Generate a simple sine wave audio file (WAV format).
-    
-    Args:
-        filename: Output file path
-        duration: Duration in seconds
-        frequency: Frequency in Hz (440 Hz = A note)
-        sample_rate: Sample rate in Hz
+    Uploads an audio file to Gemini and asks for a direct transcription.
+    No sample rate conversion or chunking needed.
     """
-    num_samples = duration * sample_rate
-    
-    # Create audio data
-    audio_data = []
-    for i in range(num_samples):
-        # Generate sine wave
-        sample = int(32767.0 * 0.3 * math.sin(2.0 * math.pi * frequency * i / sample_rate))
-        audio_data.append(struct.pack('<h', sample))
-    
-    # Write WAV file
-    with wave.open(filename, 'w') as wav_file:
-        wav_file.setnchannels(1)  # Mono
-        wav_file.setsampwidth(2)  # 16-bit
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(b''.join(audio_data))
-    
-    print(f"✓ Created: {filename} ({duration}s, {frequency}Hz)")
+    print(f"Uploading {file_path} to Gemini...")
 
+    # 1. Upload the raw audio file to Google's servers
+    uploaded_file = client.files.upload(file=file_path)
 
-def generate_artifact_audio_files():
-    """Generate sample audio files for the Flutter project."""
-    
-    # Create output directory if it doesn't exist
-    output_dir = os.path.join(
-        os.path.dirname(__file__), 
-        '..', 'MuseFront', 'assets', 'audio'
+    # 2. Ask the 2.5 Flash model to transcribe it
+    prompt = "You are a transcription assistant. Reply ONLY with the exact transcript of the audio."
+
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[uploaded_file, prompt]
     )
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    print("🎵 Generating sample audio files...\n")
-    
-    # Generate two different tone samples
-    # artifact_001.mp3 - Lower tone (simulating historical narration)
-    generate_sine_wave_audio(
-        os.path.join(output_dir, 'artifact_001.wav'),
-        duration=3,
-        frequency=330  # E note
-    )
-    
-    # artifact_002.mp3 - Higher tone (simulating museum guide)
-    generate_sine_wave_audio(
-        os.path.join(output_dir, 'artifact_002.wav'),
-        duration=3,
-        frequency=494  # B note
-    )
-    
-    print(f"\n✓ Audio files created in: {output_dir}")
-    print("  - artifact_001.wav (3 seconds)")
-    print("  - artifact_002.wav (3 seconds)")
-    print("\nNote: These are placeholder sine wave tones.")
-    print("Replace them with actual audio narrations for production use.")
+
+    # 3. Clean up the file from Google's servers to save space
+    client.files.delete(name=uploaded_file.name)
+
+    return response.text.strip()
 
 
-if __name__ == '__main__':
-    generate_artifact_audio_files()
+# =========================
+# TEXT -> AUDIO (TTS)
+# =========================
+async def text_to_audio(text: str, output_file: str = "output.wav", voice_name: str = "Aoede") -> str:
+    """
+    Converts text to speech using Gemini's dedicated TTS model.
+    Outputs as a WAV file.
+    """
+    print(f"Generating audio using Gemini Voice ({voice_name})...")
+
+    # We MUST use the dedicated TTS model, not the standard 2.5 Flash
+    TTS_MODEL = "gemini-3.1-flash-tts-preview"
+
+    # Use the correct types wrapper for the speech config
+    config = types.GenerateContentConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=voice_name
+                )
+            )
+        )
+    )
+
+    response = client.models.generate_content(
+        model=TTS_MODEL,
+        contents=text,
+        config=config
+    )
+
+    # Extract the raw PCM audio bytes from the response
+    audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+
+    # FIX: Use the 'wave' module to write the proper WAV headers so players can read it
+    with wave.open(output_file, "wb") as wf:
+        wf.setnchannels(1)      # 1 channel (Mono)
+        wf.setsampwidth(2)      # 2 bytes per sample (16-bit PCM)
+        wf.setframerate(24000)  # Gemini's native output is 24kHz
+        wf.writeframes(audio_bytes)
+
+    return output_file
+
+
+# =========================
+# TEST
+# =========================
+async def main():
+    print("=== TEST STT ===")
+
+    # Note: Just pass your RAW input file! No `audioop` conversions needed!
+    input_audio = "input_test.wav"
+
+    if not os.path.exists(input_audio):
+        print(f"Error: {input_audio} not found. Please add an audio file to test.")
+        return
+
+    text = await audio_to_text(input_audio)
+    print("\nTranscript Received:")
+    print(text)
+    print("-" * 30)
+
+    print("\n=== TEST TTS ===")
+
+    # Simulate your LLM's response
+    llm_response = f"Say hello to MuseAmigo! This is a test of Gemini's native TTS capabilities using the {MODEL} model."
+
+    output = await text_to_audio(
+        text=llm_response,
+        output_file="result.wav",
+        voice_name="Aoede"  # Options: Aoede, Charon, Fenrir, Kore, Puck
+    )
+
+    print(f"\nSuccess! Audio saved as: {output}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
