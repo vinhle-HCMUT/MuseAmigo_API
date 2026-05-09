@@ -9,7 +9,9 @@ from sqlalchemy import text, func
 import json
 from generate_audio import audio_to_text, text_to_audio
 import models, schemas
+from dashboard_api import router as dashboard_router
 from database import engine, get_db
+from staff_auth import create_staff_token, effective_role
 from datetime import date, datetime, timedelta
 import secrets
 from agent import agent_executor, get_ogima_response, system_message as ogima_system_message
@@ -19,6 +21,8 @@ from sqlalchemy.exc import IntegrityError
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,6 +87,52 @@ def seed_museums(db: Session) -> None:
         else:
             db.add(models.Museum(**item))
 
+    db.commit()
+
+
+def seed_staff_users(db: Session) -> None:
+    """Demo staff accounts for the admin dashboard (change passwords in production)."""
+    staff_accounts = [
+        {
+            "email": "superadmin@museamigo.local",
+            "full_name": "Super Admin",
+            "password": "admin123",
+            "role": "superadmin",
+            "managed_museum_id": None,
+        },
+        {
+            "email": "manager.ip@museamigo.local",
+            "full_name": "Independence Palace Manager",
+            "password": "manager123",
+            "role": "manager",
+            "managed_museum_id": 1,
+        },
+        {
+            "email": "manager.wrm@museamigo.local",
+            "full_name": "War Remnants Manager",
+            "password": "manager123",
+            "role": "manager",
+            "managed_museum_id": 2,
+        },
+    ]
+    for item in staff_accounts:
+        u = db.query(models.User).filter(models.User.email == item["email"]).first()
+        if u:
+            u.role = item["role"]
+            u.managed_museum_id = item["managed_museum_id"]
+            u.hashed_password = item["password"]
+            if not u.full_name:
+                u.full_name = item["full_name"]
+        else:
+            db.add(
+                models.User(
+                    full_name=item["full_name"],
+                    email=item["email"],
+                    hashed_password=item["password"],
+                    role=item["role"],
+                    managed_museum_id=item["managed_museum_id"],
+                )
+            )
     db.commit()
 
 
@@ -496,6 +546,66 @@ def migrate_add_user_settings_columns():
     finally:
         db.close()
 
+def migrate_add_user_staff_columns():
+    """Add role and managed_museum_id to users for staff dashboard."""
+    db = next(get_db())
+    try:
+        db.execute(
+            text("""
+            ALTER TABLE users ADD COLUMN role VARCHAR(30) DEFAULT 'visitor'
+        """)
+        )
+        db.commit()
+        print("✓ Added role column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ role column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+
+    try:
+        db.execute(
+            text("""
+            ALTER TABLE users ADD COLUMN managed_museum_id INTEGER NULL
+        """)
+        )
+        db.commit()
+        print("✓ Added managed_museum_id column to users table")
+    except Exception as e:
+        if "Duplicate column" in str(e) or "already exists" in str(e).lower():
+            print("✓ managed_museum_id column already exists")
+        else:
+            print(f"⚠ Migration note: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def migrate_normalize_user_roles():
+    """Map legacy roles to superadmin | manager | visitor."""
+    db = next(get_db())
+    try:
+        db.execute(
+            text("""
+            UPDATE users SET role = 'visitor'
+            WHERE role IS NULL OR TRIM(role) = '' OR LOWER(role) = 'user'
+        """)
+        )
+        db.execute(
+            text("""
+            UPDATE users SET role = 'manager' WHERE role = 'museum_manager'
+        """)
+        )
+        db.commit()
+        print("✓ Normalized user roles (visitor / manager / superadmin)")
+    except Exception as e:
+        print(f"⚠ Role normalization note: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def migrate_create_orders_table():
     """Create orders table if it doesn't exist"""
     db = next(get_db())
@@ -522,6 +632,33 @@ def migrate_create_orders_table():
         db.close()
 
 
+def migrate_add_order_paid_at_column():
+    """Add paid_at for revenue date filtering; backfill from created_at for PAID rows."""
+    db = next(get_db())
+    try:
+        db.execute(text("ALTER TABLE orders ADD COLUMN paid_at VARCHAR(50)"))
+        db.commit()
+        print("✓ Added column orders.paid_at")
+    except Exception as e:
+        db.rollback()
+        err = str(e).lower()
+        if "duplicate column" not in err and "already exists" not in err:
+            print(f"⚠ orders.paid_at add column: {e}")
+    try:
+        db.execute(
+            text(
+                "UPDATE orders SET paid_at = created_at WHERE status = 'PAID' "
+                "AND (paid_at IS NULL OR paid_at = '')"
+            )
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"⚠ orders.paid_at backfill: {e}")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup_seed_data():
     try:
@@ -534,12 +671,20 @@ def startup_seed_data():
         migrate_add_user_settings_columns()
         print("Running migration: orders table...")
         migrate_create_orders_table()
+        print("Running migration: orders.paid_at column...")
+        migrate_add_order_paid_at_column()
+        print("Running migration: user staff columns...")
+        migrate_add_user_staff_columns()
+        print("Running migration: normalize user roles...")
+        migrate_normalize_user_roles()
 
         print("Opening DB session for seeding...")
         db = next(get_db())
         try:
             print("Seeding museums...")
             seed_museums(db)
+            print("Seeding staff users...")
+            seed_staff_users(db)
             print("Seeding artifacts...")
             seed_artifacts(db)
             print("Seeding exhibitions...")
@@ -593,7 +738,12 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     # 1. Package the data into our Database Model
     # (Note: For this test, we are saving the password as plain text. We will secure this later!)
     # 1. Tạo model (giữ nguyên)
-    db_user = models.User(full_name=user.full_name.strip(), email=user.email.strip(), hashed_password=user.password)
+    db_user = models.User(
+        full_name=user.full_name.strip(),
+        email=user.email.strip(),
+        hashed_password=user.password,
+        role="visitor",
+    )
 
     try:
         # Đưa cả add và commit vào trong
@@ -647,6 +797,48 @@ def login_user(user_credentials: schemas.UserLogin, db: Session = Depends(get_db
         "font_size": db_user.font_size,
         "scheme": db_user.scheme
     }
+
+
+@app.post("/auth/staff-login", response_model=schemas.StaffLoginResponse)
+def staff_login(credentials: schemas.StaffLoginRequest, db: Session = Depends(get_db)):
+    if not credentials.email or not credentials.email.strip():
+        raise HTTPException(status_code=400, detail="Email is required")
+    if not credentials.password or not credentials.password.strip():
+        raise HTTPException(status_code=400, detail="Password is required")
+
+    db_user = (
+        db.query(models.User)
+        .filter(models.User.email == credentials.email.strip())
+        .first()
+    )
+    if not db_user or db_user.hashed_password != credentials.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    er = effective_role(db_user)
+    if er not in ("superadmin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is not authorized for the staff dashboard",
+        )
+    if er == "manager" and not db_user.managed_museum_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not assigned to a museum",
+        )
+
+    token = create_staff_token(db_user.id, er, db_user.managed_museum_id)
+    user_payload = schemas.StaffMeResponse(
+        id=db_user.id,
+        full_name=db_user.full_name or "",
+        email=db_user.email or "",
+        role=er,
+        managed_museum_id=db_user.managed_museum_id,
+    )
+    return schemas.StaffLoginResponse(access_token=token, user=user_payload)
+
 
 @app.post("/auth/forgot-password")
 def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
@@ -729,6 +921,53 @@ def update_user(user_id: int, data: schemas.UserUpdate, db: Session = Depends(ge
         "full_name": db_user.full_name,
         "email": db_user.email,
     }
+
+# --- Admin endpoints for full user management ---
+
+@app.get("/admin/users", response_model=list[schemas.UserResponse])
+def admin_get_all_users(db: Session = Depends(get_db)):
+    """Return list of all users (admin view)."""
+    return db.query(models.User).all()
+
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(user_id: int, db: Session = Depends(get_db)):
+    """Delete a user and cascade related data (admin)."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Delete related collections, achievements, tickets, orders first to avoid FK issues
+    db.query(models.Collection).filter(models.Collection.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.UserAchievement).filter(models.UserAchievement.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.Ticket).filter(models.Ticket.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.Order).filter(models.Order.user_id == user_id).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return {"message": f"User {user_id} deleted"}
+
+@app.put("/admin/users/{user_id}", response_model=schemas.UserResponse)
+def admin_update_user(user_id: int, data: schemas.AdminUserUpdate, db: Session = Depends(get_db)):
+    """Admin can update any user fields."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update only provided fields
+    if data.full_name is not None:
+        user.full_name = data.full_name.strip()
+    if data.email is not None:
+        user.email = data.email.strip()
+    if data.theme is not None:
+        user.theme = data.theme
+    if data.language is not None:
+        user.language = data.language
+    if data.font_size is not None:
+        user.font_size = data.font_size
+    if data.scheme is not None:
+        user.scheme = data.scheme
+
+    db.commit()
+    db.refresh(user)
+    return user
 
 # 1. Endpoint to load the Map/Discovery screen
 @app.get("/museums", response_model=list[schemas.MuseumResponse])
@@ -900,6 +1139,7 @@ def simulate_payment_webhook(order_id: int, db: Session = Depends(get_db)):
 
     # Mark as PAID
     order.status = "PAID"
+    order.paid_at = str(date.today())
 
     # Generate the ticket
     random_string = uuid.uuid4().hex[:8].upper()

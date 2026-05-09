@@ -17,6 +17,10 @@ class User(Base):
     reset_token = Column(String(255), nullable=True)
     reset_token_expires = Column(String(50), nullable=True)
 
+    # superadmin | manager | visitor (mobile app users are visitor)
+    role = Column(String(30), default="visitor", index=True)
+    managed_museum_id = Column(Integer, ForeignKey("museums.id"), nullable=True)
+
 class Museum(Base):
     __tablename__ = "museums"
 
@@ -87,6 +91,7 @@ class Order(Base):
     amount = Column(Integer)
     status = Column(String(20), default="PENDING") # PENDING, PAID
     created_at = Column(String(50))
+    paid_at = Column(String(50), nullable=True)  # YYYY-MM-DD when status became PAID
 
 class Route(Base):
     __tablename__ = "routes"
