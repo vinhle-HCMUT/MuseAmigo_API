@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 
 # This is what we expect Unity to send us (The JSON payload)
 class UserCreate(BaseModel):
@@ -158,3 +159,4 @@ class ChatRequest(BaseModel):
 # What FastAPI returns back to Unity
 class ChatResponse(BaseModel):
     reply: str
+    action: Literal["NAVIGATE", "SETTINGS_UPDATE"] | None = None

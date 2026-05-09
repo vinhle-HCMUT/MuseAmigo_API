@@ -2,12 +2,13 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
+import json
 import models, schemas
 from database import engine, get_db
 import uuid
 from datetime import date, datetime, timedelta
 import secrets
-from agent import agent_executor
+from agent import agent_executor, system_message as ogima_system_message
 from sqlalchemy.exc import IntegrityError
 
 # Creates the tables
@@ -1083,16 +1084,18 @@ def update_user_settings(user_id: int, settings: schemas.UserSettingsUpdate, db:
 # --- PHASE 5: Ogima AI Chat Assistant ---
 @app.post("/ai/chat", response_model=schemas.ChatResponse)
 def chat_with_ogima(chat_request: schemas.ChatRequest):
-    
-    # 1. Package the user's message with Ogima's system message
-    system_message = (
-        "You are Ogima, a friendly and helpful museum guide for the Independence Palace and other museums. "
-        "Use your tools to find information about artifacts, museum hours, ticket prices, exhibitions, and routes. "
-        "If you cannot find specific information in your database, politely say you don't know, "
-        "but offer to help with other museum-related queries."
-    )
+
+    # Keep allowed actions explicit for safer client handling.
+    allowed_actions = {"NAVIGATE", "SETTINGS_UPDATE"}
+
+    def _normalize_action(value):
+        if value is None:
+            return None
+        candidate = str(value).strip().upper()
+        return candidate if candidate in allowed_actions else None
+
     user_input = {"messages": [
-        ("system", system_message),
+        ("system", ogima_system_message),
         ("user", chat_request.message)
     ]}
     
@@ -1102,9 +1105,21 @@ def chat_with_ogima(chat_request: schemas.ChatRequest):
         
         # 3. Extract the final text reply
         ai_reply = final_state["messages"][-1].content
-        
-        # 4. Return it to Unity as JSON
-        return {"reply": ai_reply}
+        raw_content = ai_reply if isinstance(ai_reply, str) else json.dumps(ai_reply)
+
+        # 4. Parse structured JSON output from the model.
+        # Fallback to plain text reply if the model returns non-JSON content.
+        try:
+            parsed = json.loads(raw_content)
+            reply_text = str(parsed.get("reply", "")).strip()
+            action = _normalize_action(parsed.get("action"))
+
+            if not reply_text:
+                reply_text = raw_content
+
+            return {"reply": reply_text, "action": action}
+        except Exception:
+            return {"reply": raw_content, "action": None}
         
     except Exception as e:
         # If the AI or Google's server crashes, we catch it so the app doesn't break

@@ -15,10 +15,13 @@ if not os.getenv("GOOGLE_API_KEY"):
     raise ValueError("GOOGLE_API_KEY is missing from the .env file!")
 
 system_message = (
-    "You are Ogima, the friendly virtual assistant for the MuseAmigo app. "
+    "You are Ogima, the friendly virtual assistant for the MuseAmigo app. You must ALWAYS reply in JSON format with two keys: 'reply' and 'action'."
     "Your job is to help visitors explore museums. "
     "Always use the provided tools to get accurate information about artifacts, "
     "museum hours, exhibitions, and routes before answering."
+    "If the user wants to go somewhere (toilet, exit, specific artifact), set action type to 'NAVIGATE'. "
+    "If the user wants to change settings (theme, language), set action type to 'SETTINGS_UPDATE'. "
+    "If no action is needed, set action to null."
 )
 
 @tool
@@ -74,6 +77,31 @@ def get_exhibitions(museum_name: str) -> str:
             return reply
         else:
             return f"There are currently no exhibitions listed for {museum.name}."
+    finally:
+        db.close()
+        
+@tool
+def get_exhibition_details(exhibition_name: str) -> str:
+    """Provides details about a specific exhibition, including which artifacts are included."""
+    db = SessionLocal()
+    try:
+        exhibition = db.query(models.Exhibition).filter(models.Exhibition.name.ilike(f"%{exhibition_name}%")).first()
+        if not exhibition:
+            return f"I couldn't find an exhibition named '{exhibition_name}'."
+        
+        # Assuming the artifacts are stored as a comma-separated string of artifact codes
+        artifact_codes = exhibition.artifacts.split(",") if exhibition.artifacts else []
+        artifacts_info = []
+        
+        for code in artifact_codes:
+            artifact = db.query(models.Artifact).filter(models.Artifact.artifact_code == code.strip()).first()
+            if artifact:
+                artifacts_info.append(f"{artifact.title} (Code: {artifact.artifact_code})")
+        
+        if artifacts_info:
+            return f"Exhibition '{exhibition.name}' includes the following artifacts:\n" + "\n".join(artifacts_info)
+        else:
+            return f"Exhibition '{exhibition.name}' does not have any listed artifacts."
     finally:
         db.close()
 
@@ -138,7 +166,7 @@ base_llm = ChatGoogleGenerativeAI(
 )
 
 # 4. Give the AI the list of tools it is allowed to use
-tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes, update_user_settings]
+tools = [get_artifact_details, get_museum_info, get_exhibitions, get_exhibition_details, get_routes, update_user_settings]
 
 
 # 5. Create the Agent Executor (The Manager!)
