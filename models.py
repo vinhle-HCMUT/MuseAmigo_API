@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, Float
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, Float, JSON
 from database import Base
 
 class User(Base):
@@ -59,7 +59,7 @@ class Exhibition(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100))        # e.g., "Exhibition of paintings"
     location = Column(String(100))    # e.g., "Hall C"
-    artifacts = Column(String(500), nullable=True)  # Comma-separated artifact codes included in this exhibition
+    artifacts = Column(JSON) # List of artifact codes included in this exhibition, stored as a JSON string or comma-separated values
     
     # Links this exhibition to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))

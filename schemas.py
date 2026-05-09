@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, List, Optional
 
 # This is what we expect Unity to send us (The JSON payload)
 class UserCreate(BaseModel):
@@ -70,6 +70,7 @@ class ExhibitionResponse(BaseModel):
     name: str
     location: str
     museum_id: int
+    artifacts: Optional[List[str]] = []
 
     class Config:
         from_attributes = True
