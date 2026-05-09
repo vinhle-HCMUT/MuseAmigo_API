@@ -29,10 +29,10 @@ def get_artifact_details(query: str) -> str:
     try:
         # Search the database for any artifact title or code that matches the AI's query
         artifact = db.query(models.Artifact).filter(
-            (models.Artifact.title.ilike(f"%{query}%")) | 
+            (models.Artifact.title.ilike(f"%{query}%")) |
             (models.Artifact.artifact_code.ilike(f"%{query}%"))
         ).first()
-        
+
         # Format the result so the AI can read it easily
         if artifact:
             return f"Found: {artifact.title} (Code: {artifact.artifact_code}). Year: {artifact.year}. Description: {artifact.description}"
@@ -65,7 +65,7 @@ def get_exhibitions(museum_name: str) -> str:
         museum = db.query(models.Museum).filter(models.Museum.name.ilike(f"%{museum_name}%")).first()
         if not museum:
             return f"I couldn't find a museum named '{museum_name}'."
-        
+
         exhibitions = db.query(models.Exhibition).filter(models.Exhibition.museum_id == museum.id).all()
         if exhibitions:
             reply = f"Exhibitions at {museum.name}:\n"
@@ -85,7 +85,7 @@ def get_routes(museum_name: str) -> str:
         museum = db.query(models.Museum).filter(models.Museum.name.ilike(f"%{museum_name}%")).first()
         if not museum:
             return f"I couldn't find a museum named '{museum_name}'."
-        
+
         routes = db.query(models.Route).filter(models.Route.museum_id == museum.id).all()
         if routes:
             reply = f"Available routes at {museum.name}:\n"
@@ -105,7 +105,7 @@ def update_user_settings(user_id: int, theme: str = None, language: str = None, 
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
             return f"User with ID {user_id} not found."
-        
+
         updated_fields = []
         if theme is not None:
             user.theme = theme
@@ -119,10 +119,10 @@ def update_user_settings(user_id: int, theme: str = None, language: str = None, 
         if scheme is not None:
             user.scheme = scheme
             updated_fields.append("scheme")
-            
+
         if not updated_fields:
             return "No valid settings provided to update."
-            
+
         db.commit()
         return f"Successfully updated settings: {', '.join(updated_fields)} for user {user_id}."
     except Exception as e:
@@ -134,7 +134,7 @@ def update_user_settings(user_id: int, theme: str = None, language: str = None, 
 # 3. Initialize the Gemini brain
 base_llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
-    temperature=0.7 
+    temperature=0.7
 )
 
 # 4. Give the AI the list of tools it is allowed to use
@@ -145,15 +145,45 @@ tools = [get_artifact_details, get_museum_info, get_exhibitions, get_routes, upd
 # This wraps the LLM and the tools together so it can run the loop automatically.
 # Using the basic version without system message for now
 agent_executor = create_react_agent(
-    base_llm, 
+    base_llm,
     tools,
     prompt=system_message # Thêm tính cách cho Agent
 )
 
+
+def get_ogima_response(message_text: str) -> str:
+    """
+    Hàm dùng chung để lấy câu trả lời từ Agent.
+    """
+    system_message = (
+        "You are Ogima, a friendly and helpful museum guide for the Independence Palace and other museums. "
+        "Use your tools to find information about artifacts, museum hours, ticket prices, exhibitions, and routes. "
+        "If you cannot find specific information in your database, politely say you don't know, "
+        "but offer to help with other museum-related queries. Keep your answers concise and spoken-friendly."
+    )
+
+    user_input = {"messages": [
+        ("system", system_message),
+        ("user", message_text)
+    ]}
+
+    # Chạy Agent
+    final_state = agent_executor.invoke(user_input)
+    raw_content = final_state["messages"][-1].content
+
+    # Xử lý trường hợp content là list (như lỗi bạn gặp lúc nãy)
+    if isinstance(raw_content, list):
+        ai_reply = next((item['text'] for item in raw_content if item.get('type') == 'text'), "")
+    else:
+        ai_reply = str(raw_content)
+
+    return ai_reply
+
+
 # --- QUICK TEST ---
 if __name__ == "__main__":
     print("Asking Ogima about museum hours...")
-    
+
     # Test museum info
     user_input = {"messages": [("user", "What are the operating hours of the Independence Palace?")]}
     final_state = agent_executor.invoke(user_input)

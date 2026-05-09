@@ -11,8 +11,8 @@ class UserResponse(BaseModel):
     id: int
     full_name: str
     email: str
-    theme: str       
-    language: str    
+    theme: str
+    language: str
     font_size: str
     scheme: str
     class Config:
@@ -28,10 +28,10 @@ class MuseumResponse(BaseModel):
     name: str
     operating_hours: str
     base_ticket_price: int
-    
+
     latitude: float
     longitude: float
-    
+
     class Config:
         from_attributes = True
 
@@ -43,7 +43,7 @@ class ArtifactResponse(BaseModel):
     description: str
     is_3d_available: bool
     museum_id: int
-    
+
     unity_prefab_name: str
     audio_asset: str = ""
     class Config:
