@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, Float, JSON
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, Float, JSON, Text
 from database import Base
 
 class User(Base):
@@ -48,6 +48,18 @@ class Artifact(Base):
     audio_asset = Column(String(200), default="") # e.g., "assets/audio/artifact_001.mp3"
     # Links this artifact to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))
+
+    # Normalized 0–1 position on the museum indoor map image; optional.
+    map_x = Column(Float, nullable=True)
+    map_y = Column(Float, nullable=True)
+    floor_id = Column(
+        Integer,
+        ForeignKey("museum_floors.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+
 class Collection(Base):
     __tablename__ = "collections"
 
@@ -64,7 +76,16 @@ class Exhibition(Base):
     name = Column(String(100))        # e.g., "Exhibition of paintings"
     location = Column(String(100))    # e.g., "Hall C"
     artifacts = Column(JSON) # List of artifact codes included in this exhibition, stored as a JSON string or comma-separated values
-    
+
+    map_x = Column(Float, nullable=True)
+    map_y = Column(Float, nullable=True)
+    floor_id = Column(
+        Integer,
+        ForeignKey("museum_floors.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Links this exhibition to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))
 
@@ -99,7 +120,7 @@ class Route(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100))           # e.g., "Museum Highlights"
     estimated_time = Column(String(50))  # e.g., "45 min"
-    stops_count = Column(Integer)        # e.g., 4
+    stops_json = Column(Text, nullable=True)  # JSON array of stop labels/positions
     
     # Links this route to a specific museum
     museum_id = Column(Integer, ForeignKey("museums.id"))
@@ -124,3 +145,37 @@ class UserAchievement(Base):
     museum_id = Column(Integer, ForeignKey("museums.id"), nullable=True) # Track which museum this was earned in
     is_completed = Column(Boolean, default=False)
     completed_at = Column(String(50), nullable=True) # Date when completed
+
+
+class MuseumFloor(Base):
+    """Indoor floor labels and order (editable in dashboard; mobile uses for chips)."""
+
+    __tablename__ = "museum_floors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    museum_id = Column(Integer, ForeignKey("museums.id"), nullable=False, index=True)
+    label = Column(String(128), nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    # Per-floor raster maps (normalized coords are relative to these images).
+    indoor_map_2d_path = Column(String(500), nullable=True)
+    indoor_map_3d_path = Column(String(500), nullable=True)
+
+
+class MapDestination(Base):
+    """POIs on the indoor map: WC, café, stairs, entrance, etc. (title, color, coords, floor)."""
+
+    __tablename__ = "map_destinations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    museum_id = Column(Integer, ForeignKey("museums.id"), nullable=False, index=True)
+    title = Column(String(256), nullable=False)
+    category = Column(String(64), nullable=False, default="other")
+    marker_color = Column(String(32), nullable=False, default="#6366F1")
+    map_x = Column(Float, nullable=False)
+    map_y = Column(Float, nullable=False)
+    floor_id = Column(
+        Integer,
+        ForeignKey("museum_floors.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )

@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
@@ -118,7 +119,16 @@ def get_routes(museum_name: str) -> str:
         if routes:
             reply = f"Available routes at {museum.name}:\n"
             for r in routes:
-                reply += f"- {r.name}: {r.estimated_time}, {r.stops_count} stops.\n"
+                count = 0
+                raw = (r.stops_json or "").strip()
+                if raw:
+                    try:
+                        loaded = json.loads(raw)
+                        if isinstance(loaded, list):
+                            count = len(loaded)
+                    except Exception:
+                        count = 0
+                reply += f"- {r.name}: {r.estimated_time}, {count} stops.\n"
             return reply
         else:
             return f"There are no navigation routes listed for {museum.name}."

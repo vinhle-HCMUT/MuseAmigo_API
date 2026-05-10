@@ -1,6 +1,9 @@
 from datetime import date, timedelta
+import json
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +11,11 @@ from sqlalchemy.exc import IntegrityError
 import models
 import schemas
 from database import get_db
+from indoor_map_helpers import (
+    artifact_to_response,
+    ensure_floor_belongs_to_museum,
+    exhibition_to_response,
+)
 from staff_auth import (
     effective_role,
     ensure_museum_scope,
@@ -16,6 +24,9 @@ from staff_auth import (
 )
 
 router = APIRouter()
+BASE_DIR = Path(__file__).parent
+MAPS_DIR = BASE_DIR / "static" / "maps"
+MAPS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _parse_opt_date_param(value: str | None) -> date | None:
@@ -101,12 +112,13 @@ def list_artifacts_dashboard(
     db: Session = Depends(get_db),
 ):
     ensure_museum_scope(user, museum_id)
-    return (
+    rows = (
         db.query(models.Artifact)
         .filter(models.Artifact.museum_id == museum_id)
         .order_by(models.Artifact.id)
         .all()
     )
+    return [artifact_to_response(r, db) for r in rows]
 
 
 @router.post(
@@ -124,6 +136,7 @@ def create_artifact_dashboard(
     code = data.artifact_code.strip()
     if not code:
         raise HTTPException(status_code=400, detail="artifact_code is required")
+    ensure_floor_belongs_to_museum(db, museum_id, data.floor_id)
     art = models.Artifact(
         artifact_code=code,
         title=data.title.strip(),
@@ -133,6 +146,9 @@ def create_artifact_dashboard(
         unity_prefab_name=data.unity_prefab_name.strip(),
         audio_asset=(data.audio_asset or "").strip(),
         museum_id=museum_id,
+        map_x=data.map_x,
+        map_y=data.map_y,
+        floor_id=data.floor_id,
     )
     db.add(art)
     try:
@@ -141,7 +157,7 @@ def create_artifact_dashboard(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Artifact code must be unique")
-    return art
+    return artifact_to_response(art, db)
 
 
 @router.put("/artifacts/{artifact_id}", response_model=schemas.ArtifactResponse)
@@ -163,19 +179,39 @@ def update_artifact_dashboard(
                 status_code=403, detail="Only superadmin can move artifacts between museums"
             )
         ensure_museum_scope(user, new_mid)
+        art.museum_id = new_mid
+    if "floor_id" in payload:
+        fid = payload["floor_id"]
+        if fid is not None:
+            ensure_floor_belongs_to_museum(db, art.museum_id, fid)
+        art.floor_id = fid
+    nullable_geo = ("map_x", "map_y")
+    for k in nullable_geo:
+        if k in payload:
+            setattr(art, k, payload[k])
     for k, v in payload.items():
+        if k in ("museum_id", "floor_id", "map_x", "map_y"):
+            continue
         if v is None:
             continue
         if isinstance(v, str):
             v = v.strip()
         setattr(art, k, v)
+    if art.floor_id is not None:
+        fl = (
+            db.query(models.MuseumFloor)
+            .filter(models.MuseumFloor.id == art.floor_id)
+            .first()
+        )
+        if not fl or fl.museum_id != art.museum_id:
+            art.floor_id = None
     try:
         db.commit()
         db.refresh(art)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Artifact code must be unique")
-    return art
+    return artifact_to_response(art, db)
 
 
 @router.delete("/artifacts/{artifact_id}")
@@ -212,7 +248,7 @@ def list_exhibitions_dashboard(
         .order_by(models.Exhibition.id)
         .all()
     )
-    return rows
+    return [exhibition_to_response(r, db) for r in rows]
 
 
 @router.post(
@@ -227,16 +263,20 @@ def create_exhibition_dashboard(
     db: Session = Depends(get_db),
 ):
     ensure_museum_scope(user, museum_id)
+    ensure_floor_belongs_to_museum(db, museum_id, data.floor_id)
     ex = models.Exhibition(
         name=data.name.strip(),
         location=data.location.strip(),
         museum_id=museum_id,
         artifacts=data.artifacts if data.artifacts is not None else [],
+        map_x=data.map_x,
+        map_y=data.map_y,
+        floor_id=data.floor_id,
     )
     db.add(ex)
     db.commit()
     db.refresh(ex)
-    return ex
+    return exhibition_to_response(ex, db)
 
 
 @router.put("/exhibitions/{exhibition_id}", response_model=schemas.ExhibitionResponse)
@@ -254,15 +294,24 @@ def update_exhibition_dashboard(
     if not ex:
         raise HTTPException(status_code=404, detail="Exhibition not found")
     ensure_museum_scope(user, ex.museum_id)
+    payload = data.model_dump(exclude_unset=True)
     if data.name is not None:
         ex.name = data.name.strip()
     if data.location is not None:
         ex.location = data.location.strip()
     if data.artifacts is not None:
         ex.artifacts = data.artifacts
+    if "floor_id" in payload:
+        fid = payload["floor_id"]
+        if fid is not None:
+            ensure_floor_belongs_to_museum(db, ex.museum_id, fid)
+        ex.floor_id = fid
+    for k in ("map_x", "map_y"):
+        if k in payload:
+            setattr(ex, k, payload[k])
     db.commit()
     db.refresh(ex)
-    return ex
+    return exhibition_to_response(ex, db)
 
 
 @router.delete("/exhibitions/{exhibition_id}")
@@ -284,6 +333,540 @@ def delete_exhibition_dashboard(
     return {"message": "Exhibition deleted"}
 
 
+def _map_destination_response(
+    row: models.MapDestination, db: Session
+) -> schemas.MapDestinationResponse:
+    fl = (
+        db.query(models.MuseumFloor)
+        .filter(models.MuseumFloor.id == row.floor_id)
+        .first()
+    )
+    return schemas.MapDestinationResponse(
+        id=row.id,
+        museum_id=row.museum_id,
+        title=row.title,
+        category=row.category or "other",
+        marker_color=row.marker_color or "#6366F1",
+        map_x=row.map_x,
+        map_y=row.map_y,
+        floor_id=row.floor_id,
+        floor_label=(fl.label if fl else ""),
+    )
+
+
+@router.get(
+    "/museums/{museum_id}/floors",
+    response_model=list[schemas.MuseumFloorResponse],
+)
+def list_floors_dashboard(
+    museum_id: int,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    return (
+        db.query(models.MuseumFloor)
+        .filter(models.MuseumFloor.museum_id == museum_id)
+        .order_by(models.MuseumFloor.sort_order, models.MuseumFloor.id)
+        .all()
+    )
+
+
+@router.post(
+    "/museums/{museum_id}/floors",
+    response_model=schemas.MuseumFloorResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_floor_dashboard(
+    museum_id: int,
+    data: schemas.MuseumFloorCreate,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    def _norm_map_path(p: str | None) -> str | None:
+        if p is None:
+            return None
+        t = p.strip()
+        return t or None
+
+    row = models.MuseumFloor(
+        museum_id=museum_id,
+        label=data.label.strip(),
+        sort_order=data.sort_order,
+        indoor_map_2d_path=_norm_map_path(data.indoor_map_2d_path),
+        indoor_map_3d_path=_norm_map_path(data.indoor_map_3d_path),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.put(
+    "/museums/{museum_id}/floors/{floor_id}",
+    response_model=schemas.MuseumFloorResponse,
+)
+def update_floor_dashboard(
+    museum_id: int,
+    floor_id: int,
+    data: schemas.MuseumFloorUpdate,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    row = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.id == floor_id,
+            models.MuseumFloor.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    if data.label is not None:
+        row.label = data.label.strip()
+    if data.sort_order is not None:
+        row.sort_order = data.sort_order
+    if data.indoor_map_2d_path is not None:
+        t = data.indoor_map_2d_path.strip()
+        row.indoor_map_2d_path = t or None
+    if data.indoor_map_3d_path is not None:
+        t = data.indoor_map_3d_path.strip()
+        row.indoor_map_3d_path = t or None
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/museums/{museum_id}/floors/{floor_id}")
+def delete_floor_dashboard(
+    museum_id: int,
+    floor_id: int,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    row = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.id == floor_id,
+            models.MuseumFloor.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    db.delete(row)
+    db.commit()
+    return {"message": "Floor deleted"}
+
+
+@router.get(
+    "/museums/{museum_id}/maps",
+    response_model=list[schemas.MapAssetResponse],
+)
+def list_maps_dashboard(
+    museum_id: int,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    floors = (
+        db.query(models.MuseumFloor)
+        .filter(models.MuseumFloor.museum_id == museum_id)
+        .order_by(models.MuseumFloor.sort_order, models.MuseumFloor.id)
+        .all()
+    )
+    out: list[schemas.MapAssetResponse] = []
+    for fl in floors:
+        for kind, path in (
+            ("2d", fl.indoor_map_2d_path),
+            ("3d", fl.indoor_map_3d_path),
+        ):
+            p = (path or "").strip()
+            if not p:
+                continue
+            file_size = None
+            updated_at = None
+            if p.startswith("/static/maps/"):
+                fp = MAPS_DIR / p.split("/static/maps/", 1)[1]
+                if fp.exists():
+                    st = fp.stat()
+                    file_size = int(st.st_size)
+                    updated_at = str(int(st.st_mtime))
+            out.append(
+                schemas.MapAssetResponse(
+                    filename=p.rsplit("/", 1)[-1],
+                    path=p,
+                    map_kind=kind,
+                    floor_id=fl.id,
+                    floor_label=fl.label,
+                    file_size=file_size,
+                    updated_at=updated_at,
+                )
+            )
+    return out
+
+
+@router.post(
+    "/museums/{museum_id}/maps",
+    response_model=schemas.MapAssetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_map_dashboard(
+    museum_id: int,
+    floor_id: int = Form(...),
+    map_kind: str = Form(...),
+    file: UploadFile = File(...),
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    floor = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.id == floor_id,
+            models.MuseumFloor.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not floor:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    kind = (map_kind or "").strip().lower()
+    if kind not in ("2d", "3d"):
+        raise HTTPException(status_code=400, detail="map_kind must be '2d' or '3d'")
+    raw_name = (file.filename or "").strip()
+    ext = Path(raw_name).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PNG/JPG/JPEG/WEBP files are supported",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    unique_name = f"m{museum_id}_f{floor_id}_{kind}_{uuid4().hex}{ext}"
+    out_path = MAPS_DIR / unique_name
+    out_path.write_bytes(data)
+    rel = f"/static/maps/{unique_name}"
+    if kind == "2d":
+        floor.indoor_map_2d_path = rel
+    else:
+        floor.indoor_map_3d_path = rel
+    db.commit()
+    return schemas.MapAssetResponse(
+        filename=unique_name,
+        path=rel,
+        map_kind=kind,
+        floor_id=floor.id,
+        floor_label=floor.label,
+        file_size=len(data),
+        updated_at=str(int(out_path.stat().st_mtime)),
+    )
+
+
+@router.delete("/museums/{museum_id}/maps")
+def delete_map_dashboard(
+    museum_id: int,
+    path: str = Query(...),
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    p = (path or "").strip()
+    if not p.startswith("/static/maps/"):
+        raise HTTPException(status_code=400, detail="Only /static/maps/* paths can be deleted")
+    name = p.split("/static/maps/", 1)[1]
+    if not name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid map path")
+
+    # Do not allow deleting a file that is currently referenced by floors of another museum.
+    used_elsewhere = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.museum_id != museum_id,
+            or_(
+                models.MuseumFloor.indoor_map_2d_path == p,
+                models.MuseumFloor.indoor_map_3d_path == p,
+            ),
+        )
+        .first()
+    )
+    if used_elsewhere:
+        raise HTTPException(
+            status_code=409,
+            detail="Map is used by another museum floor and cannot be deleted",
+        )
+
+    floors = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.museum_id == museum_id,
+            or_(
+                models.MuseumFloor.indoor_map_2d_path == p,
+                models.MuseumFloor.indoor_map_3d_path == p,
+            ),
+        )
+        .all()
+    )
+    for fl in floors:
+        if fl.indoor_map_2d_path == p:
+            fl.indoor_map_2d_path = None
+        if fl.indoor_map_3d_path == p:
+            fl.indoor_map_3d_path = None
+    db.commit()
+
+    fp = MAPS_DIR / name
+    if fp.exists():
+        fp.unlink()
+    return {"message": "Map deleted"}
+
+
+@router.get(
+    "/museums/{museum_id}/map-destinations",
+    response_model=list[schemas.MapDestinationResponse],
+)
+def list_map_destinations_dashboard(
+    museum_id: int,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    rows = (
+        db.query(models.MapDestination)
+        .filter(models.MapDestination.museum_id == museum_id)
+        .order_by(models.MapDestination.id)
+        .all()
+    )
+    return [_map_destination_response(r, db) for r in rows]
+
+
+@router.post(
+    "/museums/{museum_id}/map-destinations",
+    response_model=schemas.MapDestinationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_map_destination_dashboard(
+    museum_id: int,
+    data: schemas.MapDestinationCreate,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    floor = (
+        db.query(models.MuseumFloor)
+        .filter(
+            models.MuseumFloor.id == data.floor_id,
+            models.MuseumFloor.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not floor:
+        raise HTTPException(
+            status_code=400,
+            detail="floor_id must belong to this museum",
+        )
+    row = models.MapDestination(
+        museum_id=museum_id,
+        title=data.title.strip(),
+        category=(data.category or "other").strip() or "other",
+        marker_color=(data.marker_color or "#6366F1").strip() or "#6366F1",
+        map_x=data.map_x,
+        map_y=data.map_y,
+        floor_id=data.floor_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _map_destination_response(row, db)
+
+
+@router.put(
+    "/museums/{museum_id}/map-destinations/{destination_id}",
+    response_model=schemas.MapDestinationResponse,
+)
+def update_map_destination_dashboard(
+    museum_id: int,
+    destination_id: int,
+    data: schemas.MapDestinationUpdate,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    row = (
+        db.query(models.MapDestination)
+        .filter(
+            models.MapDestination.id == destination_id,
+            models.MapDestination.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    if data.floor_id is not None:
+        floor = (
+            db.query(models.MuseumFloor)
+            .filter(
+                models.MuseumFloor.id == data.floor_id,
+                models.MuseumFloor.museum_id == museum_id,
+            )
+            .first()
+        )
+        if not floor:
+            raise HTTPException(
+                status_code=400,
+                detail="floor_id must belong to this museum",
+            )
+        row.floor_id = data.floor_id
+    if data.title is not None:
+        row.title = data.title.strip()
+    if data.category is not None:
+        row.category = data.category.strip() or "other"
+    if data.marker_color is not None:
+        row.marker_color = data.marker_color.strip() or "#6366F1"
+    if data.map_x is not None:
+        row.map_x = data.map_x
+    if data.map_y is not None:
+        row.map_y = data.map_y
+    db.commit()
+    db.refresh(row)
+    return _map_destination_response(row, db)
+
+
+@router.delete("/museums/{museum_id}/map-destinations/{destination_id}")
+def delete_map_destination_dashboard(
+    museum_id: int,
+    destination_id: int,
+    user: models.User = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    ensure_museum_scope(user, museum_id)
+    row = (
+        db.query(models.MapDestination)
+        .filter(
+            models.MapDestination.id == destination_id,
+            models.MapDestination.museum_id == museum_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    db.delete(row)
+    db.commit()
+    return {"message": "Map destination deleted"}
+
+
+def _normalize_route_stops(
+    museum_id: int,
+    db: Session,
+    stops: list[schemas.RouteStopPayload] | None,
+) -> list[dict]:
+    if not stops:
+        return []
+    out: list[dict] = []
+    for s in stops[:100]:
+        kind = (s.item_type or "custom").strip().lower()
+        item_id = s.item_id
+        label = (s.label or "").strip()
+
+        if kind == "artifact" and item_id:
+            row = (
+                db.query(models.Artifact)
+                .filter(
+                    models.Artifact.id == item_id,
+                    models.Artifact.museum_id == museum_id,
+                )
+                .first()
+            )
+            if not row:
+                continue
+            label = row.title
+        elif kind == "exhibition" and item_id:
+            row = (
+                db.query(models.Exhibition)
+                .filter(
+                    models.Exhibition.id == item_id,
+                    models.Exhibition.museum_id == museum_id,
+                )
+                .first()
+            )
+            if not row:
+                continue
+            label = row.name
+        elif kind == "map_place" and item_id:
+            row = (
+                db.query(models.MapDestination)
+                .filter(
+                    models.MapDestination.id == item_id,
+                    models.MapDestination.museum_id == museum_id,
+                )
+                .first()
+            )
+            if not row:
+                continue
+            label = row.title
+        else:
+            kind = "custom"
+            item_id = None
+            if not label:
+                continue
+
+        out.append(
+            {
+                "item_type": kind,
+                "item_id": int(item_id) if item_id else None,
+                "label": label,
+            }
+        )
+    return out
+
+
+def _route_response(route: models.Route) -> schemas.RouteResponse:
+    parsed: list[dict] = []
+    raw = (route.stops_json or "").strip()
+    if raw:
+        try:
+            loaded = json.loads(raw)
+            if isinstance(loaded, list):
+                if loaded and isinstance(loaded[0], str):
+                    parsed = [
+                        {"item_type": "custom", "item_id": None, "label": str(x)}
+                        for x in loaded
+                        if str(x).strip()
+                    ]
+                else:
+                    for x in loaded:
+                        if not isinstance(x, dict):
+                            continue
+                        label = str(x.get("label") or "").strip()
+                        if not label:
+                            continue
+                        item_type = str(x.get("item_type") or "custom").strip().lower()
+                        if item_type not in ("artifact", "exhibition", "map_place", "custom"):
+                            item_type = "custom"
+                        item_id = x.get("item_id")
+                        parsed.append(
+                            {
+                                "item_type": item_type,
+                                "item_id": int(item_id) if isinstance(item_id, int) else None,
+                                "label": label,
+                            }
+                        )
+        except Exception:
+            parsed = []
+    stops_count = len(parsed)
+    return schemas.RouteResponse(
+        id=route.id,
+        name=route.name,
+        estimated_time=route.estimated_time,
+        stops_count=stops_count,
+        stops_json=[schemas.RouteStopPayload(**x) for x in parsed],
+        museum_id=route.museum_id,
+    )
+
+
 @router.get("/museums/{museum_id}/routes", response_model=list[schemas.RouteResponse])
 def list_routes_dashboard(
     museum_id: int,
@@ -291,12 +874,13 @@ def list_routes_dashboard(
     db: Session = Depends(get_db),
 ):
     ensure_museum_scope(user, museum_id)
-    return (
+    rows = (
         db.query(models.Route)
         .filter(models.Route.museum_id == museum_id)
         .order_by(models.Route.id)
         .all()
     )
+    return [_route_response(r) for r in rows]
 
 
 @router.post(
@@ -311,16 +895,17 @@ def create_route_dashboard(
     db: Session = Depends(get_db),
 ):
     ensure_museum_scope(user, museum_id)
+    stops = _normalize_route_stops(museum_id, db, data.stops_json)
     r = models.Route(
         name=data.name.strip(),
         estimated_time=data.estimated_time.strip(),
-        stops_count=data.stops_count,
+        stops_json=json.dumps(stops, ensure_ascii=False) if stops else None,
         museum_id=museum_id,
     )
     db.add(r)
     db.commit()
     db.refresh(r)
-    return r
+    return _route_response(r)
 
 
 @router.put("/routes/{route_id}", response_model=schemas.RouteResponse)
@@ -335,15 +920,19 @@ def update_route_dashboard(
         raise HTTPException(status_code=404, detail="Route not found")
     ensure_museum_scope(user, r.museum_id)
     payload = data.model_dump(exclude_unset=True)
-    for k, v in payload.items():
-        if v is None:
+    stops_updated = False
+    if "stops_json" in payload:
+        stops = _normalize_route_stops(museum_id=r.museum_id, db=db, stops=data.stops_json)
+        r.stops_json = json.dumps(stops, ensure_ascii=False) if stops else None
+        stops_updated = True
+    for k in ("name", "estimated_time"):
+        if k not in payload or payload[k] is None:
             continue
-        if isinstance(v, str):
-            v = v.strip()
+        v = str(payload[k]).strip()
         setattr(r, k, v)
     db.commit()
     db.refresh(r)
-    return r
+    return _route_response(r)
 
 
 @router.delete("/routes/{route_id}")

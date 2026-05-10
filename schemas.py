@@ -1,3 +1,5 @@
+import json
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, List, Optional
 
@@ -32,7 +34,6 @@ class MuseumResponse(BaseModel):
 
     latitude: float
     longitude: float
-
     class Config:
         from_attributes = True
 
@@ -47,6 +48,11 @@ class ArtifactResponse(BaseModel):
 
     unity_prefab_name: str
     audio_asset: str = ""
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+    floor_label: str | None = None
+
     class Config:
         from_attributes = True
 
@@ -71,6 +77,10 @@ class ExhibitionResponse(BaseModel):
     location: str
     museum_id: int
     artifacts: Optional[List[str]] = None
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+    floor_label: str | None = None
 
     @field_validator("artifacts", mode="before")
     @classmethod
@@ -102,6 +112,33 @@ class TicketResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class MarkTicketUsedRequest(BaseModel):
+    qr_code: str = Field(..., min_length=1)
+
+
+class MarkTicketUsedResponse(BaseModel):
+    message: str
+    ticket_id: int
+    is_used: bool
+
+
+class RedeemTicketRequest(BaseModel):
+    user_id: int
+    ticket_code: str = Field(..., min_length=1)
+
+
+class RedeemTicketResponse(BaseModel):
+    id: int
+    ticket_type: str
+    purchase_date: str
+    qr_code: str
+    is_used: bool
+    user_id: int
+    museum_id: int
+    museum_name: str
+
+
 class OrderResponse(BaseModel):
     order_id: int
     status: str
@@ -116,10 +153,28 @@ class RouteResponse(BaseModel):
     name: str
     estimated_time: str
     stops_count: int
+    stops_json: list["RouteStopPayload"] = Field(default_factory=list)
     museum_id: int
 
     class Config:
         from_attributes = True
+
+    @field_validator("stops_json", mode="before")
+    @classmethod
+    def _parse_stops_json(cls, v):
+        # Backward compatible: DB may store TEXT JSON (or NULL) in routes.stops_json.
+        if v is None:
+            return []
+        if isinstance(v, str):
+            t = v.strip()
+            if not t:
+                return []
+            try:
+                parsed = json.loads(t)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return v
 
 class AchievementResponse(BaseModel):
     id: int
@@ -205,6 +260,77 @@ class MuseumUpdate(BaseModel):
     base_ticket_price: int | None = None
     latitude: float | None = None
     longitude: float | None = None
+class IndoorMapPublicResponse(BaseModel):
+    museum_id: int
+    map_2d_path: str | None = None
+    map_3d_path: str | None = None
+
+
+# --- Museum floors & map destinations (indoor map POIs, dashboard-editable) ---
+class MuseumFloorResponse(BaseModel):
+    id: int
+    museum_id: int
+    label: str
+    sort_order: int
+    indoor_map_2d_path: str | None = None
+    indoor_map_3d_path: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class MuseumFloorCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=128)
+    sort_order: int = 0
+    indoor_map_2d_path: str | None = None
+    indoor_map_3d_path: str | None = None
+
+
+class MuseumFloorUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=128)
+    sort_order: int | None = None
+    indoor_map_2d_path: str | None = None
+    indoor_map_3d_path: str | None = None
+
+
+class MapAssetResponse(BaseModel):
+    filename: str
+    path: str
+    map_kind: str
+    floor_id: int | None = None
+    floor_label: str | None = None
+    file_size: int | None = None
+    updated_at: str | None = None
+
+
+class MapDestinationResponse(BaseModel):
+    id: int
+    museum_id: int
+    title: str
+    category: str
+    marker_color: str
+    map_x: float
+    map_y: float
+    floor_id: int
+    floor_label: str
+
+
+class MapDestinationCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    category: str = Field(default="other", max_length=64)
+    marker_color: str = Field(default="#6366F1", max_length=32)
+    map_x: float = Field(ge=0.0, le=1.0)
+    map_y: float = Field(ge=0.0, le=1.0)
+    floor_id: int
+
+
+class MapDestinationUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    category: str | None = Field(default=None, max_length=64)
+    marker_color: str | None = Field(default=None, max_length=32)
+    map_x: float | None = Field(default=None, ge=0.0, le=1.0)
+    map_y: float | None = Field(default=None, ge=0.0, le=1.0)
+    floor_id: int | None = None
 
 
 class ArtifactCreate(BaseModel):
@@ -215,6 +341,9 @@ class ArtifactCreate(BaseModel):
     is_3d_available: bool = False
     unity_prefab_name: str = ""
     audio_asset: str = ""
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
 
 
 class ArtifactUpdate(BaseModel):
@@ -226,30 +355,80 @@ class ArtifactUpdate(BaseModel):
     unity_prefab_name: str | None = None
     audio_asset: str | None = None
     museum_id: int | None = None
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+
+
+class ArtifactMapPositionUpdate(BaseModel):
+    """Update only indoor-map coordinates (normalized 0–1 on the map image)."""
+
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+
+    @field_validator("map_x", "map_y")
+    @classmethod
+    def _clamp_unit(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if v < 0 or v > 1:
+            raise ValueError("map_x and map_y must be between 0 and 1")
+        return v
 
 
 class ExhibitionCreate(BaseModel):
     name: str
     location: str
     artifacts: list[str] | None = None
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+
+    @field_validator("map_x", "map_y")
+    @classmethod
+    def _clamp_exhibition_map(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if v < 0 or v > 1:
+            raise ValueError("map_x and map_y must be between 0 and 1")
+        return v
 
 
 class ExhibitionUpdate(BaseModel):
     name: str | None = None
     location: str | None = None
     artifacts: list[str] | None = None
+    map_x: float | None = None
+    map_y: float | None = None
+    floor_id: int | None = None
+
+    @field_validator("map_x", "map_y")
+    @classmethod
+    def _clamp_exhibition_map_u(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if v < 0 or v > 1:
+            raise ValueError("map_x and map_y must be between 0 and 1")
+        return v
+
+
+class RouteStopPayload(BaseModel):
+    item_type: Literal["artifact", "exhibition", "map_place", "custom"] = "custom"
+    item_id: int | None = None
+    label: str = Field(min_length=1, max_length=256)
 
 
 class RouteCreate(BaseModel):
     name: str
     estimated_time: str
-    stops_count: int
+    stops_json: list[RouteStopPayload] = Field(default_factory=list)
 
 
 class RouteUpdate(BaseModel):
     name: str | None = None
     estimated_time: str | None = None
-    stops_count: int | None = None
+    stops_json: list[RouteStopPayload] | None = None
 
 
 class AchievementCreate(BaseModel):
