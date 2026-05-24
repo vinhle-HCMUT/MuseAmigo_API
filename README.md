@@ -1,94 +1,47 @@
-# 🏛️ MuseAmigo - Tài Liệu Hướng Dẫn Kỹ Thuật
-> **Dự án:** Hệ thống quản lý và tương tác cổ vật bảo tàng thông qua AI.
-> **Backend Stack:** FastAPI | MySQL (Aiven) | Render | Google Gemini
+# 🏛️ MuseAmigo - Backend API Service
+
+⚡ **Hệ thống quản lý và tương tác cổ vật bảo tàng thông qua trí tuệ nhân tạo (AI).**
+
+<p align="left">
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=FastAPI&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL" />
+  <img src="https://img.shields.io/badge/Google%20Gemini-8E75C2?style=for-the-badge&logo=googlegemini&logoColor=white" alt="Gemini" />
+  <img src="https://img.shields.io/badge/Render-000000?style=for-the-badge&logo=render&logoColor=white" alt="Render" />
+</p>
 
 ---
 
-## 1. 🗄️ Kết Nối Database Cloud (DBeaver)
-Để xem và quản lý dữ liệu trực tiếp trên Cloud, các thành viên sử dụng **DBeaver** và thiết lập kết nối theo bảng thông số sau:
+## 📖 Tổng Quan Dự Án
+MuseAmigo là giải pháp công nghệ số hóa trải nghiệm bảo tàng. Hệ thống Backend cung cấp các RESTful API phục vụ việc quản lý thông tin cổ vật, đồng thời tích hợp mô hình ngôn ngữ lớn (LLM) **Google Gemini** để tự động tạo nội dung tương tác, giải đáp và cung cấp thông tin chuyên sâu về hiện vật cho người dùng cuối trên ứng dụng client.
 
-| Thông số | Giá trị |
+## ✨ Các Tính Năng Cốt Lõi
+* **Quản lý Cổ vật (CRUD):** API tối ưu hiệu năng để truy xuất, cập nhật danh mục hiện vật.
+* **Tích hợp AI (Google Gemini):** Phân tích ngữ cảnh, tự động sinh nội dung tương tác và thuyết minh cổ vật tự động.
+* **Đồng bộ thời gian thực:** Kết nối cơ sở dữ liệu Cloud giúp dữ liệu cập nhật tức thì lên client mà không cần build lại ứng dụng.
+
+---
+
+## 1. 🗄️ Cấu Hình Cơ Sở Dữ Liệu Cloud
+
+Hệ thống sử dụng cơ sở dữ liệu **MySQL** được host trên nền tảng **Aiven Cloud**. Để quản lý và xem dữ liệu trực tiếp, các thành viên sử dụng công cụ **DBeaver** và cấu hình theo các thông số dưới đây:
+
+| Thông số | Giá trị định cấu hình |
 | :--- | :--- |
 | **Loại Database** | `MySQL` |
 | **Server Host** | `mysql-36b29279-congvinh7304-44dd.g.aivencloud.com` |
 | **Port** | `17987` |
 | **Username** | `avnadmin` |
-| **Password** | `AVNS_49Sy8nbA8N7g1IFYLmq` |
 | **Database** | `defaultdb` |
+| **Password** | *Vui lòng lấy trong file `.env` cục bộ hoặc kênh trao đổi nội bộ* |
 
-> [!CAUTION]
-> **CẢNH BÁO BẢO MẬT:** Tuyệt đối **KHÔNG** chuyển trạng thái Repository này sang **Public** khi còn chứa thông tin kết nối trên. Hãy sử dụng file `.env` để bảo mật khi code.
+> [!IMPORTANT]
+> **Hướng dẫn Bảo mật:** Để bảo vệ an toàn cho hệ thống, toàn bộ thông tin nhạy cảm bao gồm mật khẩu kết nối database và API Key của Google Gemini đã được đưa vào biến môi trường. Vui lòng tạo một file `.env` ở thư mục gốc của dự án dựa trên mẫu dưới đây:
 
----
-
-## 2. 🚀 Kiểm Thử Backend (API Testing)
-Mọi thay đổi trên logic Backend sẽ được tự động cập nhật tại:
-🔗 **Swagger UI:** [https://museamigo-backend.onrender.com/docs/](https://museamigo-backend.onrender.com/docs/)
-
-### Hướng dẫn Test nhanh:
-1. Truy cập vào link **Swagger UI** bên trên.
-2. Chọn một Endpoint (Ví dụ: `GET /artifacts`).
-3. Bấm **Try it out** -> **Execute**.
-4. **Mã 200:** Thành công, dữ liệu JSON sẽ hiển thị bên dưới.
-
----
-
-## 3. 🛠️ Quy Trình Cập Nhật Code (Workflow)
-Khi có sự thay đổi logic tại máy Local (VS Code), thực hiện quy trình đẩy code để Render tự động Deploy:
-
-1. **Cập nhật danh sách thư viện (nếu có cài mới):**
-   ```bash
-   pip freeze > requirements.txt
-2. **Commit và Push code lên GitHub:**
-```
-   git add .
-   git commit -m "feat: mô tả tính năng mới hoặc fix lỗi"
-   git push origin main
-```
-Sau khi Push, Render sẽ mất khoảng 2-3 phút để build lại bản mới nhất.
-
-## 4. Tích Hợp Vào Frontend Unity (C#)
-Sử dụng đoạn code mẫu dưới đây để kết nối Unity với hệ thống Backend.
-
-A. Cấu hình Base URL C#
-
-// Sử dụng HTTPS cho môi trường Production (Cloud)
-
-private string baseUrl = "[https://museamigo-backend.onrender.com](https://museamigo-backend.onrender.com)";
-
-B. Script mẫu lấy danh sách Cổ vật
-C#
-```
-using UnityEngine;
-using UnityEngine.Networking;
-using System.Collections;
-
-public class ArtifactService : MonoBehaviour 
-{
-    public IEnumerator GetArtifacts() 
-    {
-        string url = baseUrl + "/artifacts";
-        
-        using (UnityWebRequest webRequest = UnityWebRequest.Get(url)) 
-        {
-            // Gửi yêu cầu và đợi phản hồi
-            yield return webRequest.SendWebRequest();
-            
-            if (webRequest.result == UnityWebRequest.Result.Success) 
-            {
-                Debug.Log("Dữ liệu nhận về: " + webRequest.downloadHandler.text);
-                // Thực hiện Parse JSON tại đây...
-            } 
-            else 
-            {
-                Debug.LogError("Lỗi kết nối API: " + webRequest.error);
-            }
-        }
-    }
-}
-```
-## 5. Lưu Ý Quan Trọng
-   
-⚠️ Cơ chế Cold Start: Vì dự án đang dùng gói Render Free, server sẽ tự "ngủ" nếu không có người truy cập. Lần gọi API đầu tiên trong ngày có thể mất 30-50 giây để khởi động. Vui lòng kiên nhẫn ở lần chạy app đầu tiên.
-
-🔄 Đồng bộ dữ liệu: Mọi dữ liệu chỉnh sửa qua DBeaver (Aiven) sẽ được cập nhật ngay lập tức cho toàn bộ người dùng App Unity mà không cần build lại App.
+```env
+# Mẫu cấu hình tệp .env cục bộ
+DB_HOST=mysql-36b29279-congvinh7304-44dd.g.aivencloud.com
+DB_PORT=17987
+DB_USER=avnadmin
+DB_PASSWORD=YOUR_SECRET_PASSWORD_HERE
+DB_NAME=defaultdb
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
