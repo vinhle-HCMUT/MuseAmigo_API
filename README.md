@@ -45,3 +45,30 @@ DB_USER=avnadmin
 DB_PASSWORD=YOUR_SECRET_PASSWORD_HERE
 DB_NAME=defaultdb
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+## 2. 🚀 Kiểm Thử & Trải Nghiệm API (API Testing)
+
+Mọi thay đổi trên logic Backend khi được đẩy lên nhánh chính sẽ tự động kích hoạt quy trình CI/CD và deploy lên môi trường Cloud. Bạn có thể kiểm thử trực tiếp các endpoint tại:
+
+🔗 **Swagger UI Documentation:** [https://museamigo-backend.onrender.com/docs/](https://museamigo-backend.onrender.com/docs/)
+
+### Các bước kiểm thử nhanh:
+1. Truy cập liên kết **Swagger UI** ở trên.
+2. Lựa chọn Endpoint bạn muốn kiểm tra (Ví dụ: `GET /artifacts` để lấy danh sách cổ vật).
+3. Nhấp chọn **Try it out** -> Chọn **Execute**.
+4. Phản hồi thành công sẽ trả về mã lỗi **200 OK** kèm theo cấu trúc dữ liệu định dạng JSON trực quan ở phía dưới.
+## 3. 🛠️ Quy Trình Cập Nhật Code (Git Workflow)
+
+Khi thực hiện cải tiến logic hoặc sửa lỗi tại máy local (VS Code), vui lòng tuân thủ quy trình đồng bộ hóa mã nguồn để hệ thống Render tự động cập nhật phiên bản mới:
+
+1. **Cập nhật danh sách thư viện phụ thuộc (nếu có cài đặt package mới):**
+   ```bash
+   pip freeze > requirements.txt
+2. **Đóng gói mã nguồn và đẩy lên GitHub:**
+   ```bash
+   git add .
+   git commit -m "feat: mô tả chi tiết tính năng mới hoặc bản sửa lỗi"
+   git push origin main
+## 4. ⚠️ Các Lưu Ý Kỹ Thuật Quan Trọng
+
+* **Cơ chế Cold Start (Khởi động lạnh):** Do dịch vụ Backend hiện tại đang được triển khai trên gói tài nguyên miễn phí của Render, máy chủ sẽ tự động chuyển sang trạng thái "ngủ" (Sleep) nếu không phát sinh lượt truy cập nào trong thời gian dài. Lần gọi API đầu tiên trong ngày có thể mất từ **30 - 50 giây** để khởi động lại cụm container. Vui lòng kiên nhẫn trong lần tải ứng dụng đầu tiên.
+* **Cập nhật dữ liệu tức thì:** Mọi thao tác thay đổi cấu trúc hoặc bản ghi dữ liệu thông qua công cụ quản trị DBeaver sẽ có hiệu lực ngay lập tức. Hệ thống Client sẽ nhận được dữ liệu mới hoàn toàn mà không cần phải tiến hành đóng gói (Re-build) lại.
