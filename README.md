@@ -45,6 +45,7 @@ DB_USER=avnadmin
 DB_PASSWORD=YOUR_SECRET_PASSWORD_HERE
 DB_NAME=defaultdb
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+
 ## 2. 🚀 Kiểm Thử & Trải Nghiệm API (API Testing)
 
 Mọi thay đổi trên logic Backend khi được đẩy lên nhánh chính sẽ tự động kích hoạt quy trình CI/CD và deploy lên môi trường Cloud. Bạn có thể kiểm thử trực tiếp các endpoint tại:
